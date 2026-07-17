@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://api.example.test/schemas/customer-signup.json",
+  "title": "Customer Signup",
+  "type": "object",
+  "required": ["email", "plan", "age"],
+  "properties": {
+    "email": {
+      "type": "string",
+      "format": "email",
+      "minLength": 5,
+      "maxLength": 120,
+      "description": "Primary customer email address.",
+      "examples": ["customer@example.test"]
+    },
+    "plan": {
+      "type": "string",
+      "enum": ["basic", "pro", "enterprise"],
+      "description": "Subscription plan."
+    },
+    "age": {
+      "type": "integer",
+      "minimum": 18,
+      "maximum": 99,
+      "description": "Customer age."
+    },
+    "birthDate": {
+      "type": "string",
+      "format": "date",
+      "description": "Date of birth.",
+      "example": "1990-01-01"
+    },
+    "newsletter": {
+      "type": "boolean",
+      "description": "Whether the customer opted in."
+    }
+  }
+}
