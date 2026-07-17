@@ -86,6 +86,7 @@ def validate_contract_data(data: dict[str, Any], schema: dict[str, Any] | None =
     validator = Draft202012Validator(schema or load_schema())
     errors = sorted(validator.iter_errors(data), key=lambda error: list(error.path))
     findings = _schema_findings(errors)
+    has_schema_findings = bool(findings)
     if not findings:
         findings.append(
             ValidationFinding(
@@ -95,6 +96,8 @@ def validate_contract_data(data: dict[str, Any], schema: dict[str, Any] | None =
                 recommendation="Keep this contract under version control with the tests that use it.",
             )
         )
+    findings.extend(_scenario_field_reference_findings(data))
+    if not has_schema_findings:
         findings.extend(_scenario_coverage_findings(data))
     return _result_from_findings(findings)
 
@@ -215,6 +218,34 @@ def _scenario_coverage_findings(data: dict[str, Any]) -> list[ValidationFinding]
                     recommendation="Add the field to at least one positive scenario with a valid strategy.",
                 )
             )
+    return findings
+
+
+def _scenario_field_reference_findings(data: dict[str, Any]) -> list[ValidationFinding]:
+    fields = data.get("fields", {})
+    scenarios = data.get("scenarios", [])
+    if not isinstance(fields, dict) or not isinstance(scenarios, list):
+        return []
+
+    known_fields = set(fields)
+    findings: list[ValidationFinding] = []
+    for scenario_index, scenario in enumerate(scenarios):
+        if not isinstance(scenario, dict):
+            continue
+        scenario_fields = scenario.get("fields", {})
+        if not isinstance(scenario_fields, dict):
+            continue
+        scenario_name = str(scenario.get("id") or scenario_index)
+        for field_name in scenario_fields:
+            if field_name not in known_fields:
+                findings.append(
+                    ValidationFinding(
+                        severity="error",
+                        field=f"scenarios[{scenario_index}].fields.{field_name}",
+                        message=f"Scenario '{scenario_name}' references unknown field '{field_name}'.",
+                        recommendation="Use a field defined in contract.fields or add a matching field definition.",
+                    )
+                )
     return findings
 
 

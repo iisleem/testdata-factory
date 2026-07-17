@@ -67,3 +67,34 @@ def test_required_field_without_positive_scenario_coverage_returns_warning() -> 
     assert result.findings[1].recommendation == (
         "Add the field to at least one positive scenario with a valid strategy."
     )
+
+
+def test_unknown_scenario_field_reference_returns_error() -> None:
+    contract = deepcopy(VALID_CONTRACT)
+    contract["scenarios"][0]["fields"]["emali"] = {"strategy": "valid_email"}
+
+    result = validate_contract_data(contract)
+
+    assert result.status == "invalid"
+    assert result.score == 0.75
+    assert [(finding.severity, finding.field) for finding in result.findings] == [
+        ("info", None),
+        ("error", "scenarios[0].fields.emali"),
+    ]
+    assert result.findings[1].message == "Scenario 'valid_signup' references unknown field 'emali'."
+    assert result.findings[1].recommendation == (
+        "Use a field defined in contract.fields or add a matching field definition."
+    )
+
+
+def test_load_contract_rejects_unknown_scenario_field_reference(tmp_path: Path) -> None:
+    contract = deepcopy(VALID_CONTRACT)
+    contract["scenarios"][0]["fields"]["emali"] = {"strategy": "valid_email"}
+    contract_path = tmp_path / "unknown-scenario-field.tdf.json"
+    contract_path.write_text(json.dumps(contract), encoding="utf-8")
+
+    with pytest.raises(ContractValidationError, match="emali") as exc:
+        load_contract(contract_path)
+
+    assert exc.value.result is not None
+    assert exc.value.result.status == "invalid"

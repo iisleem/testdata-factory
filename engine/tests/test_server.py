@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -49,6 +50,24 @@ def test_validate_contract_endpoint_returns_structured_invalid_feedback() -> Non
     assert len(body["findings"]) >= 2
     assert {"fields", "scenarios"}.issubset({finding["field"] for finding in body["findings"]})
     assert all(finding["severity"] == "error" for finding in body["findings"])
+
+
+def test_validate_contract_endpoint_reports_unknown_scenario_field() -> None:
+    client = TestClient(create_app())
+    contract = deepcopy(CONTRACT)
+    contract["scenarios"][0]["fields"]["emali"] = {"strategy": "valid_email"}
+
+    response = client.post("/v1/contracts/validate", json={"contract": contract})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "invalid"
+    assert body["findings"][1] == {
+        "severity": "error",
+        "field": "scenarios[0].fields.emali",
+        "message": "Scenario 'valid_signup' references unknown field 'emali'.",
+        "recommendation": "Use a field defined in contract.fields or add a matching field definition.",
+    }
 
 
 def test_generate_data_endpoint() -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,7 @@ from testdata_factory_engine.cli import main
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = ROOT / "examples" / "contracts" / "register.tdf.json"
 INVALID_CONTRACT = ROOT / "examples" / "contracts" / "invalid-missing-fields.tdf.json"
+VALID_CONTRACT = json.loads(CONTRACT.read_text(encoding="utf-8"))
 
 
 def test_help_lists_commands(capsys: pytest.CaptureFixture[str]) -> None:
@@ -49,6 +51,28 @@ def test_validate_invalid_contract_outputs_all_findings(capsys: pytest.CaptureFi
     assert output["status"] == "invalid"
     assert len(output["findings"]) >= 2
     assert {"fields", "scenarios"}.issubset({finding["field"] for finding in output["findings"]})
+
+
+def test_validate_contract_reports_unknown_scenario_field_json(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    contract = deepcopy(VALID_CONTRACT)
+    contract["scenarios"][0]["fields"]["emali"] = {"strategy": "valid_email"}
+    contract_path = tmp_path / "unknown-scenario-field.tdf.json"
+    contract_path.write_text(json.dumps(contract), encoding="utf-8")
+
+    exit_code = main(["validate", "--json", str(contract_path)])
+
+    assert exit_code == 1
+    output = json.loads(capsys.readouterr().out)
+    assert output["status"] == "invalid"
+    assert output["findings"][1] == {
+        "severity": "error",
+        "field": "scenarios[0].fields.emali",
+        "message": "Scenario 'valid_signup' references unknown field 'emali'.",
+        "recommendation": "Use a field defined in contract.fields or add a matching field definition.",
+    }
 
 
 def test_generate_contract_data(capsys: pytest.CaptureFixture[str]) -> None:
