@@ -69,6 +69,60 @@
         "confidence": 1,
         "signals": ["manual"]
       }
+    },
+    "age": {
+      "selector": "#age",
+      "label": "Age",
+      "dataType": "integer",
+      "businessType": "integer",
+      "required": true,
+      "constraints": {
+        "minimum": 18,
+        "maximum": 99
+      },
+      "inference": {
+        "confidence": 1,
+        "signals": ["manual"]
+      }
+    },
+    "plan": {
+      "selector": "#plan",
+      "label": "Plan",
+      "dataType": "enum",
+      "businessType": "enum",
+      "required": true,
+      "constraints": {
+        "values": ["basic", "pro", "enterprise"]
+      },
+      "inference": {
+        "confidence": 1,
+        "signals": ["manual"]
+      }
+    },
+    "birthDate": {
+      "selector": "#birth-date",
+      "label": "Birth date",
+      "dataType": "date",
+      "businessType": "date_of_birth",
+      "required": false,
+      "constraints": {
+        "format": "date"
+      },
+      "inference": {
+        "confidence": 1,
+        "signals": ["manual"]
+      }
+    },
+    "newsletter": {
+      "selector": "#newsletter",
+      "label": "Newsletter",
+      "dataType": "boolean",
+      "businessType": "boolean",
+      "required": false,
+      "inference": {
+        "confidence": 1,
+        "signals": ["manual"]
+      }
     }
   },
   "scenarios": [
@@ -88,6 +142,18 @@
         },
         "password": {
           "strategy": "valid_password"
+        },
+        "age": {
+          "strategy": "valid_integer"
+        },
+        "plan": {
+          "strategy": "valid_enum"
+        },
+        "birthDate": {
+          "strategy": "valid_date"
+        },
+        "newsletter": {
+          "strategy": "valid_boolean"
         }
       }
     },
