@@ -1,10 +1,34 @@
 {
   "name": "testdata-factory",
-  "version": "0.0.0",
-  "description": "TypeScript SDK for TestData Factory",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for TestData Factory contracts and deterministic test data workflows.",
+  "keywords": [
+    "automation",
+    "qa",
+    "synthetic-data",
+    "test-data",
+    "testing"
+  ],
+  "homepage": "https://github.com/iisleem/testdata-factory#readme",
+  "bugs": {
+    "url": "https://github.com/iisleem/testdata-factory/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iisleem/testdata-factory.git",
+    "directory": "sdk-typescript"
+  },
+  "license": "MIT",
+  "author": "Ismail Sleem",
   "type": "module",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
+  "files": [
+    "dist/src"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --test dist/test/*.test.js"

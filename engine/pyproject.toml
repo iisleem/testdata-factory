@@ -4,13 +4,30 @@ build-backend = "hatchling.build"
 
 [project]
 name = "testdata-factory-engine"
-version = "0.0.0"
-description = "Core engine for TestData Factory"
+version = "0.1.0"
+description = "Core engine and CLI for TestData Factory local-first test data generation."
 readme = "../README.md"
 requires-python = ">=3.11"
 license = "MIT"
 authors = [
   { name = "Ismail Sleem" }
+]
+keywords = [
+  "automation",
+  "qa",
+  "synthetic-data",
+  "test-data",
+  "testing"
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Testing"
 ]
 dependencies = [
   "jsonschema>=4.22,<5"
@@ -31,6 +48,12 @@ dev = [
   "httpx>=0.27,<1",
   "pytest>=8.2,<9"
 ]
+
+[project.urls]
+Homepage = "https://github.com/iisleem/testdata-factory"
+Repository = "https://github.com/iisleem/testdata-factory"
+Issues = "https://github.com/iisleem/testdata-factory/issues"
+Changelog = "https://github.com/iisleem/testdata-factory/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/testdata_factory_engine"]

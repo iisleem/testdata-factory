@@ -5,11 +5,39 @@
 
   <groupId>io.github.iisleem.testdatafactory</groupId>
   <artifactId>testdata-factory</artifactId>
-  <version>0.0.0</version>
+  <version>0.1.0</version>
   <packaging>jar</packaging>
 
   <name>TestData Factory Java SDK</name>
-  <description>Java SDK for TestData Factory</description>
+  <description>Java SDK for TestData Factory contracts and deterministic test data workflows.</description>
+  <url>https://github.com/iisleem/testdata-factory</url>
+
+  <licenses>
+    <license>
+      <name>MIT License</name>
+      <url>https://opensource.org/license/mit/</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <id>iisleem</id>
+      <name>Ismail Sleem</name>
+      <url>https://github.com/iisleem</url>
+    </developer>
+  </developers>
+
+  <scm>
+    <connection>scm:git:https://github.com/iisleem/testdata-factory.git</connection>
+    <developerConnection>scm:git:ssh://git@github.com:iisleem/testdata-factory.git</developerConnection>
+    <url>https://github.com/iisleem/testdata-factory</url>
+  </scm>
+
+  <issueManagement>
+    <system>GitHub Issues</system>
+    <url>https://github.com/iisleem/testdata-factory/issues</url>
+  </issueManagement>
 
   <properties>
     <maven.compiler.release>17</maven.compiler.release>
