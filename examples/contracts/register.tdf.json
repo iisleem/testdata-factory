@@ -1,0 +1,113 @@
+{
+  "schemaVersion": "1.0",
+  "id": "register",
+  "source": {
+    "type": "manual",
+    "value": "examples/register"
+  },
+  "locale": {
+    "country": "US",
+    "language": "en"
+  },
+  "fields": {
+    "firstName": {
+      "selector": "#first-name",
+      "label": "First name",
+      "dataType": "string",
+      "businessType": "first_name",
+      "required": true,
+      "constraints": {
+        "minLength": 1,
+        "maxLength": 80
+      },
+      "inference": {
+        "confidence": 1,
+        "signals": ["manual"]
+      }
+    },
+    "email": {
+      "selector": "#email",
+      "label": "Email",
+      "dataType": "string",
+      "businessType": "email",
+      "required": true,
+      "constraints": {
+        "format": "email"
+      },
+      "inference": {
+        "confidence": 1,
+        "signals": ["manual"]
+      }
+    },
+    "phone": {
+      "selector": "#phone",
+      "label": "Phone",
+      "dataType": "string",
+      "businessType": "phone_number",
+      "required": true,
+      "constraints": {
+        "country": "US",
+        "minLength": 10,
+        "maxLength": 16
+      },
+      "inference": {
+        "confidence": 1,
+        "signals": ["manual"]
+      }
+    },
+    "password": {
+      "selector": "#password",
+      "label": "Password",
+      "dataType": "string",
+      "businessType": "password",
+      "required": true,
+      "constraints": {
+        "minLength": 8,
+        "maxLength": 64
+      },
+      "inference": {
+        "confidence": 1,
+        "signals": ["manual"]
+      }
+    }
+  },
+  "scenarios": [
+    {
+      "id": "valid_signup",
+      "kind": "positive",
+      "description": "All required signup fields contain valid values.",
+      "fields": {
+        "firstName": {
+          "strategy": "valid_first_name"
+        },
+        "email": {
+          "strategy": "valid_email"
+        },
+        "phone": {
+          "strategy": "valid_phone"
+        },
+        "password": {
+          "strategy": "valid_password"
+        }
+      }
+    },
+    {
+      "id": "invalid_email_format",
+      "kind": "negative",
+      "description": "Email field contains a value that is not a valid email address.",
+      "fields": {
+        "email": {
+          "strategy": "invalid_email_format"
+        }
+      }
+    }
+  ],
+  "generation": {
+    "deterministic": true,
+    "defaultSeed": "register-suite"
+  },
+  "validation": {
+    "lastValidatedBy": "manual",
+    "status": "valid"
+  }
+}

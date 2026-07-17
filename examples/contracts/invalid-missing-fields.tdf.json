@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "1.0",
+  "id": "invalid_missing_fields",
+  "source": {
+    "type": "manual",
+    "value": "examples/invalid"
+  },
+  "locale": {
+    "language": "en"
+  },
+  "scenarios": [],
+  "generation": {
+    "deterministic": true,
+    "defaultSeed": "invalid"
+  },
+  "validation": {
+    "status": "invalid"
+  }
+}

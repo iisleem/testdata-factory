@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "testdata-factory-engine"
+version = "0.0.0"
+description = "Core engine for TestData Factory"
+readme = "../README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [
+  { name = "Ismail Sleem" }
+]
+dependencies = [
+  "jsonschema>=4.22,<5"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2,<9"
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/testdata_factory_engine"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
