@@ -1,0 +1,99 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Customer API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/v1/customers": {
+      "post": {
+        "operationId": "createCustomer",
+        "summary": "Create a customer",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCustomerRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Customer created"
+          }
+        }
+      }
+    },
+    "/v1/customers/{customerId}": {
+      "patch": {
+        "operationId": "updateCustomer",
+        "summary": "Update a customer",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "displayName": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Customer updated"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CreateCustomerRequest": {
+        "type": "object",
+        "required": ["email", "password", "role"],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "Primary customer email address.",
+            "examples": ["new.customer@example.test"]
+          },
+          "password": {
+            "type": "string",
+            "minLength": 12,
+            "maxLength": 72,
+            "description": "Initial account password."
+          },
+          "role": {
+            "type": "string",
+            "enum": ["admin", "member"],
+            "description": "Initial customer role."
+          },
+          "profileId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "External profile identifier.",
+            "example": "123e4567-e89b-12d3-a456-426614174000"
+          },
+          "spendLimit": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1000,
+            "description": "Monthly spending limit."
+          },
+          "marketingOptIn": {
+            "type": "boolean",
+            "description": "Whether marketing emails are allowed."
+          }
+        }
+      }
+    }
+  }
+}
