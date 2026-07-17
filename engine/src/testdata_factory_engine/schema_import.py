@@ -73,13 +73,13 @@ def import_json_schema_contract(
 ) -> dict[str, Any]:
     root_schema = _resolve_schema(schema, schema)
     contract = _build_contract(
-        contract_id=_contract_id(contract_id or _schema_title(root_schema) or source_value),
+        contract_id=_contract_id(contract_id or _schema_title(root_schema) or _source_contract_name(source_value)),
         source_type="json_schema",
         source_value=source_value,
         locale=locale,
         fields=_import_object_fields(root_schema, schema, signal_source="json_schema"),
     )
-    validate_contract_data(contract)
+    _validate_imported_contract(contract)
     return contract
 
 
@@ -101,8 +101,29 @@ def import_openapi_request_contract(
         locale=locale,
         fields=_import_object_fields(root_schema, document, signal_source="openapi"),
     )
-    validate_contract_data(contract)
+    _validate_imported_contract(contract)
     return contract
+
+
+def _validate_imported_contract(contract: dict[str, Any]) -> None:
+    result = validate_contract_data(contract)
+    if result is None:
+        return
+
+    if getattr(result, "is_valid", True) is False or getattr(result, "status", None) == "invalid":
+        raise SchemaImportError(_format_validation_result(result))
+
+
+def _format_validation_result(result: Any) -> str:
+    findings = getattr(result, "findings", ())
+    messages = [
+        f"{getattr(finding, 'field', None) or '<root>'}: {getattr(finding, 'message', 'Invalid contract')}"
+        for finding in findings
+        if getattr(finding, "severity", "error") == "error"
+    ]
+    if messages:
+        return "Imported contract is invalid: " + "; ".join(messages)
+    return "Imported contract is invalid"
 
 
 def _build_contract(
@@ -553,6 +574,14 @@ def _schema_title(schema: dict[str, Any]) -> str | None:
     if isinstance(schema_id, str) and schema_id.strip():
         return schema_id.rstrip("/").rsplit("/", maxsplit=1)[-1]
     return None
+
+
+def _source_contract_name(source_value: str) -> str:
+    source = source_value.split("#", maxsplit=1)[0].split("?", maxsplit=1)[0].rstrip("/\\")
+    name = re.split(r"[/\\]", source)[-1]
+    if "." in name:
+        return name.rsplit(".", maxsplit=1)[0]
+    return name or "imported-schema"
 
 
 def _contract_id(value: str) -> str:

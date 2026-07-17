@@ -11,6 +11,7 @@ from testdata_factory_engine import (
     import_openapi_request_contract,
     validate_contract_data,
 )
+from testdata_factory_engine import schema_import
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -84,3 +85,20 @@ def test_imports_openapi_operation_by_method_and_path() -> None:
 def test_import_rejects_schema_without_object_properties() -> None:
     with pytest.raises(SchemaImportError, match="object schema with properties"):
         import_json_schema_contract({"type": "string"}, contract_id="invalid")
+
+
+def test_import_rejects_invalid_validation_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Finding:
+        severity = "error"
+        field = "fields.email"
+        message = "Invalid imported field."
+
+    class Result:
+        is_valid = False
+        status = "invalid"
+        findings = (Finding(),)
+
+    monkeypatch.setattr(schema_import, "validate_contract_data", lambda contract: Result())
+
+    with pytest.raises(SchemaImportError, match="Imported contract is invalid: fields.email"):
+        import_json_schema_contract(_load_fixture("customer.schema.json"), contract_id="customer-signup")

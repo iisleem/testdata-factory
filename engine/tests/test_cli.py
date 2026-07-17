@@ -109,6 +109,25 @@ def test_import_json_schema_writes_contract(tmp_path: Path, capsys: pytest.Captu
     assert contract["fields"]["plan"]["constraints"]["values"] == ["basic", "pro", "enterprise"]
 
 
+def test_import_json_schema_defaults_id_to_schema_title(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    output = tmp_path / "customer.tdf.json"
+
+    exit_code = main(
+        [
+            "import",
+            "json-schema",
+            str(FIXTURES / "customer.schema.json"),
+            "--out",
+            str(output),
+        ]
+    )
+
+    assert exit_code == 0
+    assert "Imported contract: customer-signup" in capsys.readouterr().out
+    contract = json.loads(output.read_text(encoding="utf-8"))
+    assert contract["id"] == "customer-signup"
+
+
 def test_import_openapi_writes_selected_operation_contract(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     output = tmp_path / "create-customer.tdf.json"
 

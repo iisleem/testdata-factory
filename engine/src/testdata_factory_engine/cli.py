@@ -134,7 +134,7 @@ def _import_json_schema(args: argparse.Namespace) -> int:
     schema = _load_json(schema_path)
     contract = import_json_schema_contract(
         schema,
-        contract_id=args.id or schema_path.stem,
+        contract_id=args.id,
         source_value=str(schema_path),
         locale=_locale(args),
     )
