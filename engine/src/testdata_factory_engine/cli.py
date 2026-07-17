@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .contracts import ContractValidationError, load_contract
+from .contracts import ContractValidationError, load_contract, validate_contract_file
 from .generation import GenerationError, generate_records
 from .models import model_profiles_payload
 
@@ -32,6 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     validate_command = subcommands.add_parser("validate", help="Validate a .tdf.json contract.")
     validate_command.add_argument("contract", help="Path to a .tdf.json contract.")
+    validate_command.add_argument("--json", action="store_true", help="Print structured validation feedback as JSON.")
     validate_command.set_defaults(command=_validate)
 
     generate_command = subcommands.add_parser("generate", help="Generate test data from a contract scenario.")
@@ -72,9 +73,27 @@ def _init(args: argparse.Namespace) -> int:
 
 
 def _validate(args: argparse.Namespace) -> int:
-    contract = load_contract(args.contract)
-    print(f"Valid contract: {contract.id}")
-    return 0
+    result = validate_contract_file(args.contract)
+    if args.json:
+        print(json.dumps(result.to_dict(), indent=2))
+        return 0 if result.is_valid else 1
+
+    if result.is_valid:
+        contract = load_contract(args.contract)
+        if result.status == "needs_review":
+            print(f"Contract needs review: {contract.id}")
+        else:
+            print(f"Valid contract: {contract.id}")
+        for finding in result.findings:
+            if finding.severity != "info":
+                location = finding.field or "<root>"
+                print(f"{finding.severity}: {location}: {finding.message}")
+        return 0
+
+    for finding in result.findings:
+        location = finding.field or "<root>"
+        print(f"{finding.severity}: {location}: {finding.message}", file=sys.stderr)
+    return 1
 
 
 def _generate(args: argparse.Namespace) -> int:
