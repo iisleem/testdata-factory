@@ -27,3 +27,44 @@ jobs:
       - name: Run engine tests
         working-directory: engine
         run: python -m pytest
+
+  java-sdk:
+    name: Java SDK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Run Java SDK tests
+        run: mvn -f sdk-java/pom.xml test
+
+  typescript-sdk:
+    name: TypeScript SDK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: sdk-typescript/package-lock.json
+
+      - name: Install TypeScript SDK dependencies
+        working-directory: sdk-typescript
+        run: npm ci
+
+      - name: Run TypeScript SDK tests
+        working-directory: sdk-typescript
+        run: npm test

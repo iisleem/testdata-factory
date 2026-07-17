@@ -35,8 +35,14 @@ Current foundation validation:
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -e 'engine[dev,server]'
-cd engine
-python -m pytest
+python -m pytest engine
 tdf --help
+mvn -f sdk-java/pom.xml test
+(cd sdk-typescript && npm ci && npm test)
+```
+
+Run the local API server:
+
+```bash
 uvicorn testdata_factory_engine.server:app --reload
 ```
