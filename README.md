@@ -34,8 +34,9 @@ Current foundation validation:
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install -e 'engine[dev]'
+python -m pip install -e 'engine[dev,server]'
 cd engine
 python -m pytest
 tdf --help
+uvicorn testdata_factory_engine.server:app --reload
 ```
