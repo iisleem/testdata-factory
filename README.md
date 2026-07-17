@@ -46,7 +46,9 @@ Install browser scanning support when working on form scanning:
 ```bash
 python -m pip install -e 'engine[scanner]'
 python -m playwright install chromium
-tdf scan-url path/to/form.html --id sample-form --output sample-form.tdf.json
+tdf scan --url path/to/form.html --id sample-form --out sample-form.tdf.json
+tdf scan --json-schema customer.schema.json --out customer.tdf.json
+tdf scan --openapi openapi.json --operation createCustomer --out create-customer.tdf.json
 ```
 
 Run the local API server:

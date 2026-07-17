@@ -62,13 +62,24 @@ def build_parser() -> argparse.ArgumentParser:
     generate_command.add_argument("--seed", help="Override the contract default seed.")
     generate_command.set_defaults(command=_generate)
 
-    scan_command = subcommands.add_parser("scan-url", help="Scan a URL or local HTML form into a contract draft.")
-    scan_command.add_argument("source", help="URL or local HTML file path to scan.")
-    scan_command.add_argument("--id", dest="contract_id", help="Contract id to use in the draft.")
-    scan_command.add_argument("--output", help="Path to write the .tdf.json draft. Defaults to stdout.")
-    scan_command.add_argument("--locale-language", default="en", help="Locale language code for the draft.")
-    scan_command.add_argument("--locale-country", help="Optional locale country code for the draft.")
-    scan_command.set_defaults(command=_scan_url)
+    scan_command = subcommands.add_parser("scan", help="Create a .tdf.json contract from a form or schema.")
+    scan_sources = scan_command.add_mutually_exclusive_group(required=True)
+    scan_sources.add_argument("--url", help="URL or local HTML form path to scan.")
+    scan_sources.add_argument("--json-schema", help="Path to a JSON Schema document.")
+    scan_sources.add_argument("--openapi", help="Path to an OpenAPI JSON document.")
+    scan_command.add_argument("--operation", help="Operation id or METHOD /path selector for --openapi.")
+    scan_command.add_argument("--id", dest="contract_id", help="Contract id. Defaults to the source or selected operation.")
+    scan_command.add_argument("--out", required=True, help="Path to write the .tdf.json contract.")
+    _add_locale_arguments(scan_command)
+    scan_command.set_defaults(command=_scan)
+
+    scan_url_command = subcommands.add_parser("scan-url", help="Alias for scanning a URL or local HTML form.")
+    scan_url_command.add_argument("source", help="URL or local HTML file path to scan.")
+    scan_url_command.add_argument("--id", dest="contract_id", help="Contract id to use in the draft.")
+    scan_url_command.add_argument("--output", "--out", dest="output", help="Path to write the .tdf.json draft. Defaults to stdout.")
+    scan_url_command.add_argument("--locale-language", default="en", help="Locale language code for the draft.")
+    scan_url_command.add_argument("--locale-country", help="Optional locale country code for the draft.")
+    scan_url_command.set_defaults(command=_scan_url)
 
     models_command = subcommands.add_parser("models", help="Inspect local model setup.")
     model_subcommands = models_command.add_subparsers(dest="models_command_name", required=True)
@@ -131,11 +142,9 @@ def _validate(args: argparse.Namespace) -> int:
 
 def _import_json_schema(args: argparse.Namespace) -> int:
     schema_path = Path(args.schema)
-    schema = _load_json(schema_path)
-    contract = import_json_schema_contract(
-        schema,
+    contract = _import_json_schema_contract_from_path(
+        schema_path,
         contract_id=args.id,
-        source_value=str(schema_path),
         locale=_locale(args),
     )
     _write_contract(contract, args.out)
@@ -145,12 +154,10 @@ def _import_json_schema(args: argparse.Namespace) -> int:
 
 def _import_openapi(args: argparse.Namespace) -> int:
     openapi_path = Path(args.openapi)
-    document = _load_json(openapi_path)
-    contract = import_openapi_request_contract(
-        document,
+    contract = _import_openapi_contract_from_path(
+        openapi_path,
         args.operation,
         contract_id=args.id,
-        source_value=str(openapi_path),
         locale=_locale(args),
     )
     _write_contract(contract, args.out)
@@ -165,6 +172,37 @@ def _generate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _scan(args: argparse.Namespace) -> int:
+    if args.url:
+        contract = scan_contract_draft(
+            args.url,
+            contract_id=args.contract_id,
+            locale_language=args.language,
+            locale_country=args.country,
+        )
+    elif args.json_schema:
+        contract = _import_json_schema_contract_from_path(
+            Path(args.json_schema),
+            contract_id=args.contract_id,
+            locale=_locale(args),
+        )
+    elif args.openapi:
+        if not args.operation:
+            raise SchemaImportError("--operation is required with --openapi")
+        contract = _import_openapi_contract_from_path(
+            Path(args.openapi),
+            args.operation,
+            contract_id=args.contract_id,
+            locale=_locale(args),
+        )
+    else:
+        raise SchemaImportError("Choose one scan source: --url, --json-schema, or --openapi")
+
+    _write_contract(contract, args.out)
+    print(f"Wrote contract: {contract['id']}")
+    return 0
+
+
 def _scan_url(args: argparse.Namespace) -> int:
     draft = scan_contract_draft(
         args.source,
@@ -172,11 +210,10 @@ def _scan_url(args: argparse.Namespace) -> int:
         locale_language=args.locale_language,
         locale_country=args.locale_country,
     )
-    output = json.dumps(draft, indent=2) + "\n"
     if args.output:
-        Path(args.output).write_text(output, encoding="utf-8")
+        _write_contract(draft, args.output)
     else:
-        print(output, end="")
+        print(json.dumps(draft, indent=2))
     return 0
 
 
@@ -203,6 +240,38 @@ def _locale(args: argparse.Namespace) -> dict[str, str]:
 def _write_contract(contract: dict[str, Any], output: str) -> None:
     output_path = Path(output)
     output_path.write_text(json.dumps(contract, indent=2) + "\n", encoding="utf-8")
+
+
+def _import_json_schema_contract_from_path(
+    schema_path: Path,
+    *,
+    contract_id: str | None,
+    locale: dict[str, str],
+) -> dict[str, Any]:
+    schema = _load_json(schema_path)
+    return import_json_schema_contract(
+        schema,
+        contract_id=contract_id,
+        source_value=str(schema_path),
+        locale=locale,
+    )
+
+
+def _import_openapi_contract_from_path(
+    openapi_path: Path,
+    operation: str,
+    *,
+    contract_id: str | None,
+    locale: dict[str, str],
+) -> dict[str, Any]:
+    document = _load_json(openapi_path)
+    return import_openapi_request_contract(
+        document,
+        operation,
+        contract_id=contract_id,
+        source_value=str(openapi_path),
+        locale=locale,
+    )
 
 
 if __name__ == "__main__":
