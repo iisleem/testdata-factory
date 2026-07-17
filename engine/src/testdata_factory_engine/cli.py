@@ -10,6 +10,7 @@ from .contracts import ContractValidationError, load_contract, validate_contract
 from .generation import GenerationError, generate_records
 from .models import model_profiles_payload
 from .scanner import ScannerError, scan_contract_draft
+from .schema_import import SchemaImportError, import_json_schema_contract, import_openapi_request_contract
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -18,7 +19,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         return int(args.command(args))
-    except (ContractValidationError, GenerationError, ScannerError, OSError, json.JSONDecodeError) as exc:
+    except (ContractValidationError, GenerationError, ScannerError, SchemaImportError, OSError, json.JSONDecodeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
@@ -35,6 +36,24 @@ def build_parser() -> argparse.ArgumentParser:
     validate_command.add_argument("contract", help="Path to a .tdf.json contract.")
     validate_command.add_argument("--json", action="store_true", help="Print structured validation feedback as JSON.")
     validate_command.set_defaults(command=_validate)
+
+    import_command = subcommands.add_parser("import", help="Import a schema as a .tdf.json contract.")
+    import_subcommands = import_command.add_subparsers(dest="import_command_name", required=True)
+
+    json_schema_command = import_subcommands.add_parser("json-schema", help="Import JSON Schema object properties.")
+    json_schema_command.add_argument("schema", help="Path to a JSON Schema document.")
+    json_schema_command.add_argument("--id", help="Contract id. Defaults to the schema title or file name.")
+    json_schema_command.add_argument("--out", required=True, help="Path to write the .tdf.json contract.")
+    _add_locale_arguments(json_schema_command)
+    json_schema_command.set_defaults(command=_import_json_schema)
+
+    openapi_command = import_subcommands.add_parser("openapi", help="Import an OpenAPI operation request schema.")
+    openapi_command.add_argument("openapi", help="Path to an OpenAPI JSON document.")
+    openapi_command.add_argument("--operation", required=True, help="Operation id or METHOD /path selector.")
+    openapi_command.add_argument("--id", help="Contract id. Defaults to the selected operation.")
+    openapi_command.add_argument("--out", required=True, help="Path to write the .tdf.json contract.")
+    _add_locale_arguments(openapi_command)
+    openapi_command.set_defaults(command=_import_openapi)
 
     generate_command = subcommands.add_parser("generate", help="Generate test data from a contract scenario.")
     generate_command.add_argument("--contract", required=True, help="Path to a .tdf.json contract.")
@@ -57,6 +76,11 @@ def build_parser() -> argparse.ArgumentParser:
     doctor_command.set_defaults(command=_models_doctor)
 
     return parser
+
+
+def _add_locale_arguments(command: argparse.ArgumentParser) -> None:
+    command.add_argument("--language", default="en", help="Locale language code for the generated contract.")
+    command.add_argument("--country", help="Optional two-letter locale country code for the generated contract.")
 
 
 def _init(args: argparse.Namespace) -> int:
@@ -105,6 +129,35 @@ def _validate(args: argparse.Namespace) -> int:
     return 1
 
 
+def _import_json_schema(args: argparse.Namespace) -> int:
+    schema_path = Path(args.schema)
+    schema = _load_json(schema_path)
+    contract = import_json_schema_contract(
+        schema,
+        contract_id=args.id,
+        source_value=str(schema_path),
+        locale=_locale(args),
+    )
+    _write_contract(contract, args.out)
+    print(f"Imported contract: {contract['id']}")
+    return 0
+
+
+def _import_openapi(args: argparse.Namespace) -> int:
+    openapi_path = Path(args.openapi)
+    document = _load_json(openapi_path)
+    contract = import_openapi_request_contract(
+        document,
+        args.operation,
+        contract_id=args.id,
+        source_value=str(openapi_path),
+        locale=_locale(args),
+    )
+    _write_contract(contract, args.out)
+    print(f"Imported contract: {contract['id']}")
+    return 0
+
+
 def _generate(args: argparse.Namespace) -> int:
     contract = load_contract(args.contract)
     records = generate_records(contract, args.scenario, count=args.count, seed=args.seed)
@@ -130,6 +183,26 @@ def _scan_url(args: argparse.Namespace) -> int:
 def _models_doctor(args: argparse.Namespace) -> int:
     print(json.dumps({"profiles": model_profiles_payload()}, indent=2))
     return 0
+
+
+def _load_json(path: Path) -> dict[str, Any]:
+    with path.open("r", encoding="utf-8") as file:
+        data = json.load(file)
+    if not isinstance(data, dict):
+        raise SchemaImportError(f"Expected JSON object in {path}")
+    return data
+
+
+def _locale(args: argparse.Namespace) -> dict[str, str]:
+    locale = {"language": str(args.language)}
+    if args.country:
+        locale["country"] = str(args.country)
+    return locale
+
+
+def _write_contract(contract: dict[str, Any], output: str) -> None:
+    output_path = Path(output)
+    output_path.write_text(json.dumps(contract, indent=2) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

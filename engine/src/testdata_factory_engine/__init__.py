@@ -10,6 +10,7 @@ from .contracts import (
 )
 from .generation import GenerationError, generate_records
 from .models import ProviderConfig, create_provider, get_model_profile, model_profiles_payload, parse_provider_config
+from .schema_import import SchemaImportError, import_json_schema_contract, import_openapi_request_contract
 from .scanner import (
     ScannedControl,
     ScannedOption,
@@ -32,6 +33,7 @@ __all__ = [
     "ScannedOption",
     "ScannerDependencyError",
     "ScannerError",
+    "SchemaImportError",
     "TestDataFactory",
     "ValidationFinding",
     "ValidationResult",
@@ -40,6 +42,8 @@ __all__ = [
     "generate_records",
     "get_model_profile",
     "infer_field",
+    "import_json_schema_contract",
+    "import_openapi_request_contract",
     "load_contract",
     "model_profiles_payload",
     "parse_provider_config",
