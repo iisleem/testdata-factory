@@ -7,16 +7,33 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 final class LocalGenerator {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final List<String> FIRST_NAMES = List.of("Nora", "Maya", "Adam", "Omar", "Lina", "Sam");
     private static final List<String> LAST_NAMES = List.of("Stone", "Rivera", "Saleh", "Carter", "Haddad", "Kim");
+    private static final List<String> COUNTRY_CODES = List.of("US", "CA", "GB", "AU", "DE", "FR", "JO");
+    private static final List<String> CITIES = List.of("Springfield", "Riverton", "Fairview", "Georgetown", "Franklin");
+    private static final List<String> STATES = List.of("CA", "NY", "TX", "WA", "IL", "FL");
+    private static final List<String> COUNTRIES = List.of(
+        "United States",
+        "Canada",
+        "United Kingdom",
+        "Australia",
+        "Germany",
+        "France",
+        "Jordan"
+    );
+    private static final List<String> CURRENCIES = List.of("USD", "EUR", "GBP", "CAD", "AUD", "JPY", "JOD");
+    private static final DateTimeFormatter DATETIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
 
     private LocalGenerator() {
     }
@@ -86,11 +103,32 @@ final class LocalGenerator {
             case "email" -> "valid_email";
             case "password" -> "valid_password";
             case "phone_number" -> "valid_phone";
+            case "country_code" -> "valid_country_code";
+            case "address_line" -> "valid_address_line";
+            case "city" -> "valid_city";
+            case "state" -> "valid_state";
+            case "postal_code" -> "valid_postal_code";
+            case "country" -> "valid_country";
             case "integer", "quantity" -> "valid_integer";
             case "decimal", "amount", "percentage" -> "valid_decimal";
+            case "currency" -> "valid_currency";
             case "enum" -> "valid_enum";
             case "date", "date_of_birth" -> "valid_date";
+            case "time" -> "valid_time";
+            case "datetime" -> "valid_datetime";
             case "boolean" -> "valid_boolean";
+            case "url" -> "valid_url";
+            case "domain" -> "valid_domain";
+            case "uuid" -> "valid_uuid";
+            case "national_id" -> "valid_national_id";
+            case "passport_number" -> "valid_passport_number";
+            case "tax_id" -> "valid_tax_id";
+            case "account_number" -> "valid_account_number";
+            case "iban" -> "valid_iban";
+            case "credit_card_number" -> "valid_credit_card_number";
+            case "cvv" -> "valid_cvv";
+            case "expiry_date" -> "valid_expiry_date";
+            case "otp" -> "valid_otp";
             case "free_text" -> "valid_free_text";
             default -> throw new IllegalArgumentException(
                 "No default strategy for business type: " + field.path("businessType").asText()
@@ -115,13 +153,34 @@ final class LocalGenerator {
             case "valid_email" -> "user" + index + "." + randomInt(field, seed, scope, index, 1000, 9999) + "@example.test";
             case "invalid_email_format" -> "not-an-email";
             case "valid_phone" -> validPhone(field, seed, scope, index);
+            case "valid_country_code" -> choice(field, seed, scope, index, COUNTRY_CODES);
+            case "valid_address_line" -> validAddressLine(field, seed, scope, index);
+            case "valid_city" -> choice(field, seed, scope, index, CITIES);
+            case "valid_state" -> choice(field, seed, scope, index, STATES);
+            case "valid_postal_code" -> String.valueOf(randomInt(field, seed, scope, index, 10000, 99999));
+            case "valid_country" -> choice(field, seed, scope, index, COUNTRIES);
             case "invalid_alpha" -> "abc";
             case "valid_password" -> "Tdf!" + randomInt(field, seed, scope, index, 100000, 999999) + "Pass";
             case "valid_integer" -> validInteger(field, seed, scope, index);
             case "valid_decimal" -> validDecimal(field, seed, scope, index);
             case "valid_enum" -> validEnum(field, seed, scope, index);
             case "valid_date" -> validDate(field, seed, scope, index);
+            case "valid_time" -> validTime(field, seed, scope, index);
+            case "valid_datetime" -> validDatetime(field, seed, scope, index);
             case "valid_boolean" -> randomInt(field, seed, scope, index, 0, 1) == 1;
+            case "valid_currency" -> choice(field, seed, scope, index, CURRENCIES);
+            case "valid_url" -> validUrl(field, seed, scope, index);
+            case "valid_domain" -> validDomain(field, seed, scope, index);
+            case "valid_uuid" -> validUuid(field, seed, scope, index);
+            case "valid_national_id" -> "NID-" + randomInt(field, seed, scope, index, 100000000, 999999999);
+            case "valid_passport_number" -> validPassportNumber(field, seed, scope, index);
+            case "valid_tax_id" -> "TAX-" + randomInt(field, seed, scope, index, 10000000, 99999999);
+            case "valid_account_number" -> "000" + randomInt(field, seed, scope, index, 100000000, 999999999);
+            case "valid_iban" -> validIban(field, seed, scope, index);
+            case "valid_credit_card_number" -> validCreditCardNumber(field, seed, scope, index);
+            case "valid_cvv" -> String.format("%03d", randomInt(field, seed, scope, index, 0, 999));
+            case "valid_expiry_date" -> validExpiryDate(field, seed, scope, index);
+            case "valid_otp" -> String.format("%06d", randomInt(field, seed, scope, index, 0, 999999));
             case "valid_free_text" -> "Generated test note " + (index + 1);
             default -> throw new IllegalArgumentException("Unknown strategy: " + strategy);
         };
@@ -131,6 +190,12 @@ final class LocalGenerator {
         String first = choice(field, seed, scope + ":first", index, FIRST_NAMES);
         String last = choice(field, seed, scope + ":last", index, LAST_NAMES);
         return first + " " + last;
+    }
+
+    private static String validAddressLine(JsonNode field, String seed, String scope, int index) {
+        DeterministicRandom rng = rng(field, seed, scope, index);
+        List<String> streets = List.of("Market Street", "Cedar Avenue", "River Road", "Summit Lane", "Atlas Way");
+        return rng.nextInt(100, 999) + " " + streets.get(rng.nextInt(0, streets.size() - 1));
     }
 
     private static String validPhone(JsonNode field, String seed, String scope, int index) {
@@ -171,6 +236,55 @@ final class LocalGenerator {
         return LocalDate.of(1990, 1, 1).plusDays(days).toString();
     }
 
+    private static String validTime(JsonNode field, String seed, String scope, int index) {
+        DeterministicRandom rng = rng(field, seed, scope, index);
+        return String.format("%02d:%02d:00", rng.nextInt(0, 23), rng.nextInt(0, 59));
+    }
+
+    private static String validDatetime(JsonNode field, String seed, String scope, int index) {
+        DeterministicRandom rng = rng(field, seed, scope, index);
+        LocalDateTime value = LocalDateTime.of(2024, 1, 1, 9, 0, 0)
+            .plusDays(rng.nextInt(0, 365))
+            .plusMinutes(rng.nextInt(0, 8 * 60));
+        return value.format(DATETIME_FORMATTER) + "Z";
+    }
+
+    private static String validUrl(JsonNode field, String seed, String scope, int index) {
+        return "https://app-" + randomInt(field, seed, scope, index, 100, 999) + ".example.test/resource-" + (index + 1);
+    }
+
+    private static String validDomain(JsonNode field, String seed, String scope, int index) {
+        return "service-" + randomInt(field, seed, scope, index, 100, 999) + ".example.test";
+    }
+
+    private static String validUuid(JsonNode field, String seed, String scope, int index) {
+        String value = seed + ":" + scope + ":" + field.path("businessType").asText() + ":" + index;
+        return UUID.nameUUIDFromBytes(value.getBytes(StandardCharsets.UTF_8)).toString();
+    }
+
+    private static String validPassportNumber(JsonNode field, String seed, String scope, int index) {
+        DeterministicRandom rng = rng(field, seed, scope, index);
+        List<String> prefixes = List.of("P", "T", "X");
+        return prefixes.get(rng.nextInt(0, prefixes.size() - 1)) + rng.nextInt(10000000, 99999999);
+    }
+
+    private static String validIban(JsonNode field, String seed, String scope, int index) {
+        String bban = String.format("TEST123456%08d", randomInt(field, seed, scope, index, 0, 99999999));
+        return "GB" + ibanCheckDigits("GB", bban) + bban;
+    }
+
+    private static String validCreditCardNumber(JsonNode field, String seed, String scope, int index) {
+        String body = String.format("411111%09d", randomInt(field, seed, scope, index, 0, 999999999));
+        return body + luhnCheckDigit(body);
+    }
+
+    private static String validExpiryDate(JsonNode field, String seed, String scope, int index) {
+        DeterministicRandom rng = rng(field, seed, scope, index);
+        int month = rng.nextInt(1, 12);
+        int year = 30 + rng.nextInt(0, 9);
+        return String.format("%02d/%02d", month, year);
+    }
+
     private static int randomInt(JsonNode field, String seed, String scope, int index, int minimum, int maximum) {
         return rng(field, seed, scope, index).nextInt(minimum, maximum);
     }
@@ -186,6 +300,45 @@ final class LocalGenerator {
 
     private static Object toPlainValue(JsonNode value) {
         return OBJECT_MAPPER.convertValue(value, Object.class);
+    }
+
+    private static String ibanCheckDigits(String countryCode, String bban) {
+        int remainder = ibanMod97(bban + countryCode + "00");
+        return String.format("%02d", 98 - remainder);
+    }
+
+    private static int ibanMod97(String value) {
+        int remainder = 0;
+        for (int index = 0; index < value.length(); index += 1) {
+            char character = Character.toUpperCase(value.charAt(index));
+            String digits;
+            if (Character.isDigit(character)) {
+                digits = String.valueOf(character);
+            } else if (Character.isLetter(character)) {
+                digits = String.valueOf(character - 'A' + 10);
+            } else {
+                continue;
+            }
+            for (int digitIndex = 0; digitIndex < digits.length(); digitIndex += 1) {
+                remainder = (remainder * 10 + Character.digit(digits.charAt(digitIndex), 10)) % 97;
+            }
+        }
+        return remainder;
+    }
+
+    private static String luhnCheckDigit(String number) {
+        int total = 0;
+        for (int index = number.length() - 1, position = 0; index >= 0; index -= 1, position += 1) {
+            int digit = Character.digit(number.charAt(index), 10);
+            if (position % 2 == 0) {
+                digit *= 2;
+                if (digit > 9) {
+                    digit -= 9;
+                }
+            }
+            total += digit;
+        }
+        return String.valueOf((10 - total % 10) % 10);
     }
 
     private static long stableSeed(Object... parts) {
