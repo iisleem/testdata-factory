@@ -6,7 +6,7 @@ TestData Factory analyzes application forms, page metadata, or explicit contract
 
 ## Current Status
 
-This repository is in requirements/design phase.
+This repository contains the first package-ready foundations for the Python engine, Java SDK, TypeScript SDK, shared contract schema, and example contracts. The initial release wave is version `0.1.0`.
 
 Primary requirements are documented in:
 
@@ -23,9 +23,15 @@ The project is library-first, API-optional:
 - Local open-weight model support by default.
 - Deterministic generation during test execution through contracts and seeds.
 
-The license target is MIT.
+The project is licensed under MIT.
 
-The final repository name is `testdata-factory`.
+The repository name is `testdata-factory`.
+
+## Package Coordinates
+
+- Python engine and CLI: `testdata-factory-engine` on PyPI.
+- Java SDK: `io.github.iisleem.testdatafactory:testdata-factory` on Maven Central.
+- TypeScript SDK: `testdata-factory` on npm.
 
 ## Development
 
@@ -39,6 +45,14 @@ python -m pytest engine
 tdf --help
 mvn -f sdk-java/pom.xml test
 (cd sdk-typescript && npm ci && npm test)
+```
+
+Build local package artifacts:
+
+```bash
+python -m pip wheel ./engine --no-deps --wheel-dir /tmp/testdata-factory-dist
+mvn -f sdk-java/pom.xml package
+(cd sdk-typescript && npm run build && npm pack --pack-destination /tmp/testdata-factory-dist)
 ```
 
 Install browser scanning support when working on form scanning:

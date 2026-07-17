@@ -368,7 +368,7 @@ Required endpoints:
 
 Primary package target:
 
-- Maven Central package, name TBD.
+- Maven Central package: `io.github.iisleem.testdatafactory:testdata-factory`.
 
 Required style:
 
@@ -395,7 +395,7 @@ Release requirement:
 
 Primary package target:
 
-- npm package, name TBD.
+- npm package: `testdata-factory`.
 
 Required style:
 
@@ -421,7 +421,7 @@ Release requirement:
 
 Primary package target:
 
-- PyPI package, name TBD.
+- PyPI package: `testdata-factory-engine`.
 
 Required style:
 
