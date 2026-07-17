@@ -2,10 +2,19 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from .contracts import validate_contract_data
+from .contracts import (
+    FindingSeverity,
+    ValidationFinding as ContractValidationFinding,
+    ValidationResult as ContractValidationResult,
+    ValidationStatus,
+    validate_contract_data,
+)
 from .generation import GenerationError, generate_records
 from .models import model_profiles_payload
 
@@ -17,8 +26,26 @@ class ContractPayload(BaseModel):
 class GeneratePayload(BaseModel):
     contract: dict[str, Any]
     scenario_id: str = Field(alias="scenarioId")
-    count: int = 1
+    count: int = Field(default=1, ge=1)
     seed: str | None = None
+
+
+class ValidationFinding(BaseModel):
+    severity: FindingSeverity
+    field: str | None
+    message: str
+    recommendation: str
+
+
+class ValidationResult(BaseModel):
+    id: str | None = None
+    status: ValidationStatus
+    score: float = Field(ge=0, le=1)
+    findings: list[ValidationFinding]
+
+
+class GenerateResponse(BaseModel):
+    data: list[dict[str, Any]]
 
 
 def create_app() -> FastAPI:
@@ -28,31 +55,122 @@ def create_app() -> FastAPI:
         description="Self-hosted API for contract validation and deterministic test data generation.",
     )
 
-    @app.get("/health")
+    @app.exception_handler(RequestValidationError)
+    async def request_validation_handler(request: Request, exc: RequestValidationError):
+        if request.url.path == "/v1/data/generate":
+            return _validation_json_response(_request_validation_result(exc.errors()))
+        return await request_validation_exception_handler(request, exc)
+
+    @app.get("/health", summary="Health check")
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    @app.get("/v1/model-profiles")
+    @app.get("/v1/model-profiles", summary="List local model profiles")
     def model_profiles() -> dict[str, Any]:
         return {"profiles": model_profiles_payload()}
 
-    @app.post("/v1/contracts/validate")
+    @app.post(
+        "/v1/contracts/validate",
+        summary="Validate a contract",
+        response_model=ValidationResult,
+        response_model_exclude_none=True,
+        response_description="Structured contract validation feedback",
+    )
     def validate_contract(payload: ContractPayload) -> dict[str, Any]:
-        result = validate_contract_data(payload.contract).to_dict()
-        contract_id = payload.contract.get("id")
-        if isinstance(contract_id, str):
-            result["id"] = contract_id
-        return result
+        return _validation_payload(validate_contract_data(payload.contract), payload.contract)
 
-    @app.post("/v1/data/generate")
-    def generate_data(payload: GeneratePayload) -> dict[str, Any]:
+    @app.post(
+        "/v1/data/generate",
+        summary="Generate deterministic test data",
+        response_model=GenerateResponse,
+        response_description="Generated test data",
+        responses={422: {"model": ValidationResult, "description": "Structured validation feedback"}},
+    )
+    def generate_data(payload: GeneratePayload):
+        validation_result = validate_contract_data(payload.contract)
+        if not validation_result.is_valid:
+            return _validation_json_response(validation_result, payload.contract)
         try:
             records = generate_records(payload.contract, payload.scenario_id, count=payload.count, seed=payload.seed)
         except GenerationError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+            return _validation_json_response(_generation_error_result(str(exc)), payload.contract)
         return {"data": records}
 
     return app
+
+
+def _validation_json_response(
+    result: ContractValidationResult,
+    contract: dict[str, Any] | None = None,
+) -> JSONResponse:
+    return JSONResponse(status_code=422, content=_validation_payload(result, contract))
+
+
+def _validation_payload(result: ContractValidationResult, contract: dict[str, Any] | None = None) -> dict[str, Any]:
+    payload = result.to_dict()
+    if contract is not None:
+        contract_id = contract.get("id")
+        if isinstance(contract_id, str):
+            payload["id"] = contract_id
+    return payload
+
+
+def _request_validation_result(errors: list[dict[str, Any]]) -> ContractValidationResult:
+    findings = [
+        ContractValidationFinding(
+            severity="error",
+            field=_request_error_field(error),
+            message=str(error.get("msg", "Request payload is invalid.")),
+            recommendation=_request_error_recommendation(error),
+        )
+        for error in errors
+    ]
+    return _invalid_result(findings)
+
+
+def _generation_error_result(message: str) -> ContractValidationResult:
+    field = "scenarioId" if message.startswith("Unknown scenario:") else None
+    recommendation = (
+        "Use a scenario id defined in contract.scenarios."
+        if field == "scenarioId"
+        else "Update the contract or generation request so data can be generated."
+    )
+    return _invalid_result(
+        [
+            ContractValidationFinding(
+                severity="error",
+                field=field,
+                message=message,
+                recommendation=recommendation,
+            )
+        ]
+    )
+
+
+def _invalid_result(findings: list[ContractValidationFinding]) -> ContractValidationResult:
+    score = max(0.0, 1.0 - (len(findings) * 0.25))
+    return ContractValidationResult(status="invalid", score=round(score, 2), findings=tuple(findings))
+
+
+def _request_error_field(error: dict[str, Any]) -> str | None:
+    location = error.get("loc", ())
+    if not isinstance(location, (list, tuple)):
+        return None
+    parts = [str(part) for part in location if part != "body"]
+    return ".".join(parts) or None
+
+
+def _request_error_recommendation(error: dict[str, Any]) -> str:
+    field = _request_error_field(error)
+    error_type = str(error.get("type", ""))
+    if error_type == "missing":
+        return "Provide the required request property."
+    if error_type == "greater_than_equal":
+        minimum = error.get("ctx", {}).get("ge", 1)
+        return f"Use a value greater than or equal to {minimum}."
+    if field == "contract":
+        return "Provide contract as a JSON object that follows the TestData Factory contract schema."
+    return "Update the request payload so it matches the API schema."
 
 
 app = create_app()

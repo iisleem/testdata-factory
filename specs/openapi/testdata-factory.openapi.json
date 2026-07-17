@@ -51,7 +51,14 @@
             }
           },
           "422": {
-            "description": "Request payload is malformed"
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
           }
         }
       }
@@ -71,10 +78,24 @@
         },
         "responses": {
           "200": {
-            "description": "Generated test data"
+            "description": "Generated test data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerateResponse"
+                }
+              }
+            }
           },
           "422": {
-            "description": "Generation failed"
+            "description": "Structured validation feedback",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationResult"
+                }
+              }
+            }
           }
         }
       }
@@ -87,7 +108,8 @@
         "required": ["contract"],
         "properties": {
           "contract": {
-            "type": "object"
+            "type": "object",
+            "additionalProperties": true
           }
         }
       },
@@ -96,7 +118,8 @@
         "required": ["contract", "scenarioId"],
         "properties": {
           "contract": {
-            "type": "object"
+            "type": "object",
+            "additionalProperties": true
           },
           "scenarioId": {
             "type": "string"
@@ -107,7 +130,27 @@
             "default": 1
           },
           "seed": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "GenerateResponse": {
+        "type": "object",
+        "required": ["data"],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
           }
         }
       },
@@ -120,8 +163,14 @@
             "enum": ["info", "warning", "error"]
           },
           "field": {
-            "type": ["string", "null"],
-            "description": "Contract field or path associated with the finding, when available."
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "message": {
             "type": "string"
@@ -136,7 +185,14 @@
         "required": ["status", "score", "findings"],
         "properties": {
           "id": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "status": {
             "type": "string",
@@ -153,6 +209,46 @@
               "$ref": "#/components/schemas/ValidationFinding"
             }
           }
+        }
+      },
+      "HTTPValidationError": {
+        "type": "object",
+        "properties": {
+          "detail": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            }
+          }
+        }
+      },
+      "ValidationError": {
+        "type": "object",
+        "required": ["loc", "msg", "type"],
+        "properties": {
+          "loc": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            }
+          },
+          "msg": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "ctx": {
+            "type": "object"
+          },
+          "input": {}
         }
       }
     }

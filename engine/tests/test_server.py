@@ -84,6 +84,73 @@ def test_generate_data_endpoint() -> None:
     assert data[0]["email"] == "not-an-email"
 
 
+def test_generate_data_endpoint_rejects_malformed_contract() -> None:
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/v1/data/generate",
+        json={"contract": [], "scenarioId": "valid_signup"},
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["status"] == "invalid"
+    assert body["findings"][0]["field"] == "contract"
+    assert body["findings"][0]["severity"] == "error"
+
+
+def test_generate_data_endpoint_rejects_schema_invalid_contract() -> None:
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/v1/data/generate",
+        json={"contract": INVALID_CONTRACT, "scenarioId": "valid_signup"},
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["status"] == "invalid"
+    assert len(body["findings"]) >= 2
+    assert {"fields", "scenarios"}.issubset({finding["field"] for finding in body["findings"]})
+    assert all(finding["severity"] == "error" for finding in body["findings"])
+
+
+def test_generate_data_endpoint_rejects_unknown_scenario() -> None:
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/v1/data/generate",
+        json={"contract": CONTRACT, "scenarioId": "missing_scenario"},
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["status"] == "invalid"
+    assert body["findings"] == [
+        {
+            "severity": "error",
+            "field": "scenarioId",
+            "message": "Unknown scenario: missing_scenario",
+            "recommendation": "Use a scenario id defined in contract.scenarios.",
+        }
+    ]
+
+
+def test_generate_data_endpoint_rejects_invalid_count() -> None:
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/v1/data/generate",
+        json={"contract": CONTRACT, "scenarioId": "valid_signup", "count": 0},
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["status"] == "invalid"
+    assert body["findings"][0]["field"] == "count"
+    assert body["findings"][0]["recommendation"] == "Use a value greater than or equal to 1."
+
+
 def test_model_profiles_endpoint() -> None:
     client = TestClient(create_app())
 
@@ -100,3 +167,29 @@ def test_static_openapi_spec_is_valid_json() -> None:
     assert "/health" in spec["paths"]
     assert "/v1/data/generate" in spec["paths"]
     assert "ValidationResult" in spec["components"]["schemas"]
+
+
+def test_static_openapi_matches_live_schema_for_generation_contracts() -> None:
+    client = TestClient(create_app())
+    static = json.loads(OPENAPI_SPEC.read_text(encoding="utf-8"))
+    live = client.get("/openapi.json").json()
+
+    static_count = static["components"]["schemas"]["GeneratePayload"]["properties"]["count"]
+    live_count = live["components"]["schemas"]["GeneratePayload"]["properties"]["count"]
+    assert static_count["type"] == live_count["type"] == "integer"
+    assert static_count["default"] == live_count["default"] == 1
+    assert static_count["minimum"] == live_count["minimum"] == 1
+
+    for path, status_code in [
+        ("/v1/contracts/validate", "200"),
+        ("/v1/data/generate", "200"),
+        ("/v1/data/generate", "422"),
+    ]:
+        assert _response_schema(static, path, status_code) == _response_schema(live, path, status_code)
+
+
+def _response_schema(spec: dict[str, object], path: str, status_code: str) -> dict[str, object]:
+    paths = spec["paths"]
+    assert isinstance(paths, dict)
+    response = paths[path]["post"]["responses"][status_code]
+    return response["content"]["application/json"]["schema"]
