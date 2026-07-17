@@ -27,6 +27,62 @@ The license target is MIT.
 
 The final repository name is `testdata-factory`.
 
+## SDK Generation Workflows
+
+Each SDK can load a `.tdf.json` contract, select a scenario, and generate deterministic records locally from a seed.
+
+Java:
+
+```java
+var users = TestDataFactory.local()
+    .seed("signup-suite")
+    .contract(Path.of("examples/contracts/register.tdf.json"))
+    .scenario("valid_signup")
+    .count(5);
+
+var invalidEmailUser = TestDataFactory.local()
+    .seed("signup-suite")
+    .contract(Path.of("examples/contracts/register.tdf.json"))
+    .scenario("invalid_email_format")
+    .one();
+```
+
+TypeScript:
+
+```ts
+const users = testDataFactory.local()
+  .seed("signup-suite")
+  .contract("examples/contracts/register.tdf.json")
+  .scenario("valid_signup")
+  .count(5);
+
+const invalidEmailUser = testDataFactory.local()
+  .seed("signup-suite")
+  .contract("examples/contracts/register.tdf.json")
+  .scenario("invalid_email_format")
+  .one();
+```
+
+Python:
+
+```py
+users = (
+    TestDataFactory.local()
+    .seed("signup-suite")
+    .contract("examples/contracts/register.tdf.json")
+    .scenario("valid_signup")
+    .count(5)
+)
+
+invalid_email_user = (
+    TestDataFactory.local()
+    .seed("signup-suite")
+    .contract("examples/contracts/register.tdf.json")
+    .scenario("invalid_email_format")
+    .one()
+)
+```
+
 ## Development
 
 Current foundation validation:

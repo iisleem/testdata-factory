@@ -37,3 +37,30 @@ def test_python_sdk_generation_is_repeatable() -> None:
     )
 
     assert first == second
+
+
+def test_python_sdk_generates_requested_count() -> None:
+    users = (
+        TestDataFactory.local()
+        .seed("python-sdk")
+        .contract(ROOT / "examples" / "contracts" / "register.tdf.json")
+        .scenario("valid_signup")
+        .count(2)
+    )
+
+    assert len(users) == 2
+    assert users[0]["phone"].startswith("+155501")
+    assert users[0]["plan"] in {"basic", "pro", "enterprise"}
+
+
+def test_python_sdk_applies_negative_scenario_strategy() -> None:
+    user = (
+        TestDataFactory.local()
+        .seed("python-sdk")
+        .contract(ROOT / "examples" / "contracts" / "register.tdf.json")
+        .scenario("invalid_email_format")
+        .one()
+    )
+
+    assert user["email"] == "not-an-email"
+    assert user["password"].startswith("Tdf!")
