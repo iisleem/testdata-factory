@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .contracts import validate_contract_data
+from .generation import DEFAULT_STRATEGIES
 
 
 class SchemaImportError(ValueError):
@@ -30,24 +31,6 @@ CONSTRAINT_KEYS = (
     "maxProperties",
 )
 METADATA_KEYS = ("description", "examples", "example", "default", "deprecated", "readOnly", "writeOnly")
-SCENARIO_STRATEGIES = {
-    "first_name": "valid_first_name",
-    "last_name": "valid_last_name",
-    "full_name": "valid_full_name",
-    "username": "valid_username",
-    "email": "valid_email",
-    "password": "valid_password",
-    "phone_number": "valid_phone",
-    "integer": "valid_integer",
-    "quantity": "valid_integer",
-    "decimal": "valid_decimal",
-    "amount": "valid_decimal",
-    "percentage": "valid_decimal",
-    "enum": "valid_enum",
-    "date": "valid_date",
-    "date_of_birth": "valid_date",
-    "boolean": "valid_boolean",
-}
 
 
 @dataclass(frozen=True)
@@ -419,7 +402,7 @@ def _scenario_strategy(field: dict[str, Any]) -> str:
     business_type = str(field["businessType"])
     if business_type == "enum" and not field.get("constraints", {}).get("values"):
         return "valid_free_text"
-    return SCENARIO_STRATEGIES.get(business_type, "valid_free_text")
+    return DEFAULT_STRATEGIES.get(business_type, "valid_free_text")
 
 
 def _find_openapi_operation(document: dict[str, Any], selector: str) -> OpenAPIOperation:
