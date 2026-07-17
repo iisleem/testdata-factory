@@ -117,6 +117,7 @@ def test_builds_valid_contract_draft_from_scanned_controls() -> None:
     assert draft["fields"]["website"]["constraints"] == {"pattern": "https://.*", "format": "uri"}
     assert draft["fields"]["plan"]["constraints"]["values"] == ["basic", "pro"]
     assert draft["fields"]["notes"]["constraints"]["maxLength"] == 500
+    assert draft["scenarios"][0]["fields"]["website"]["strategy"] == "valid_url"
     assert controls[0].aria["describedby"] == "first-help"
     assert controls[3].aria == {"label": "Website URL", "required": "true"}
 
