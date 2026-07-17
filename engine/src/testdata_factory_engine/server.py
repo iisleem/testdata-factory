@@ -5,7 +5,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from .contracts import ContractValidationError, validate_contract_data
+from .contracts import validate_contract_data
 from .generation import GenerationError, generate_records
 from .models import model_profiles_payload
 
@@ -38,11 +38,11 @@ def create_app() -> FastAPI:
 
     @app.post("/v1/contracts/validate")
     def validate_contract(payload: ContractPayload) -> dict[str, Any]:
-        try:
-            validate_contract_data(payload.contract)
-        except ContractValidationError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
-        return {"status": "valid", "id": payload.contract["id"]}
+        result = validate_contract_data(payload.contract).to_dict()
+        contract_id = payload.contract.get("id")
+        if isinstance(contract_id, str):
+            result["id"] = contract_id
+        return result
 
     @app.post("/v1/data/generate")
     def generate_data(payload: GeneratePayload) -> dict[str, Any]:

@@ -41,10 +41,17 @@
         },
         "responses": {
           "200": {
-            "description": "Contract is valid"
+            "description": "Structured contract validation feedback",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationResult"
+                }
+              }
+            }
           },
           "422": {
-            "description": "Contract is invalid"
+            "description": "Request payload is malformed"
           }
         }
       }
@@ -101,6 +108,50 @@
           },
           "seed": {
             "type": "string"
+          }
+        }
+      },
+      "ValidationFinding": {
+        "type": "object",
+        "required": ["severity", "field", "message", "recommendation"],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["info", "warning", "error"]
+          },
+          "field": {
+            "type": ["string", "null"],
+            "description": "Contract field or path associated with the finding, when available."
+          },
+          "message": {
+            "type": "string"
+          },
+          "recommendation": {
+            "type": "string"
+          }
+        }
+      },
+      "ValidationResult": {
+        "type": "object",
+        "required": ["status", "score", "findings"],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["valid", "needs_review", "invalid"]
+          },
+          "score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ValidationFinding"
+            }
           }
         }
       }
