@@ -1,0 +1,109 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "TestData Factory API",
+    "version": "0.1.0",
+    "description": "Self-hosted API for contract validation and deterministic test data generation."
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health check",
+        "responses": {
+          "200": {
+            "description": "API is healthy"
+          }
+        }
+      }
+    },
+    "/v1/model-profiles": {
+      "get": {
+        "summary": "List local model profiles",
+        "responses": {
+          "200": {
+            "description": "Supported model profiles"
+          }
+        }
+      }
+    },
+    "/v1/contracts/validate": {
+      "post": {
+        "summary": "Validate a contract",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContractPayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Contract is valid"
+          },
+          "422": {
+            "description": "Contract is invalid"
+          }
+        }
+      }
+    },
+    "/v1/data/generate": {
+      "post": {
+        "summary": "Generate deterministic test data",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GeneratePayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Generated test data"
+          },
+          "422": {
+            "description": "Generation failed"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ContractPayload": {
+        "type": "object",
+        "required": ["contract"],
+        "properties": {
+          "contract": {
+            "type": "object"
+          }
+        }
+      },
+      "GeneratePayload": {
+        "type": "object",
+        "required": ["contract", "scenarioId"],
+        "properties": {
+          "contract": {
+            "type": "object"
+          },
+          "scenarioId": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1
+          },
+          "seed": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
