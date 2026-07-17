@@ -26,3 +26,15 @@ The project is library-first, API-optional:
 The license target is MIT.
 
 The final repository name is `testdata-factory`.
+
+## Development
+
+Current foundation validation:
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -e 'engine[dev]'
+cd engine
+python -m pytest
+```
