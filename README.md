@@ -37,4 +37,5 @@ python3 -m venv .venv
 python -m pip install -e 'engine[dev]'
 cd engine
 python -m pytest
+tdf --help
 ```
