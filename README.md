@@ -41,6 +41,14 @@ mvn -f sdk-java/pom.xml test
 (cd sdk-typescript && npm ci && npm test)
 ```
 
+Install browser scanning support when working on form scanning:
+
+```bash
+python -m pip install -e 'engine[scanner]'
+python -m playwright install chromium
+tdf scan-url path/to/form.html --id sample-form --output sample-form.tdf.json
+```
+
 Run the local API server:
 
 ```bash

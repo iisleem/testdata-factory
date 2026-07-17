@@ -24,6 +24,9 @@ server = [
   "fastapi>=0.115,<1",
   "uvicorn>=0.30,<1"
 ]
+scanner = [
+  "playwright>=1.46,<2"
+]
 dev = [
   "httpx>=0.27,<1",
   "pytest>=8.2,<9"

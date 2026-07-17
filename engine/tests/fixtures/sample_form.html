@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Signup</title>
+  </head>
+  <body>
+    <form aria-label="Signup form">
+      <label for="first-name">First name</label>
+      <input
+        id="first-name"
+        name="firstName"
+        autocomplete="given-name"
+        minlength="2"
+        maxlength="60"
+        placeholder="Jane"
+        required>
+
+      <label for="email">Work email</label>
+      <input
+        id="email"
+        name="email"
+        type="email"
+        aria-describedby="email-help"
+        placeholder="jane@example.test"
+        required>
+      <p id="email-help">Use a work address.</p>
+
+      <label for="quantity">Quantity</label>
+      <input id="quantity" name="quantity" type="number" min="1" max="10" step="1">
+
+      <input
+        id="website"
+        name="website"
+        type="url"
+        aria-label="Website URL"
+        aria-required="true"
+        pattern="https://.*">
+
+      <label for="plan">Plan</label>
+      <select id="plan" name="plan" required>
+        <option value="" disabled selected>Select a plan</option>
+        <option value="basic">Basic</option>
+        <option value="pro">Pro</option>
+      </select>
+
+      <label for="notes">Notes</label>
+      <textarea id="notes" name="notes" placeholder="Tell us more" maxlength="500"></textarea>
+    </form>
+  </body>
+</html>
