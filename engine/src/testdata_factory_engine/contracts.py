@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from importlib import resources
 from pathlib import Path
 from typing import Any, Literal
 
@@ -11,6 +12,7 @@ from jsonschema.exceptions import ValidationError
 
 FindingSeverity = Literal["info", "warning", "error"]
 ValidationStatus = Literal["valid", "needs_review", "invalid"]
+_SCHEMA_RESOURCE = ("schemas", "tdf-contract.schema.json")
 
 
 @dataclass(frozen=True)
@@ -66,20 +68,23 @@ class Contract:
 
 
 def default_schema_path() -> Path:
-    return Path(__file__).resolve().parents[3] / "specs" / "contract-schema" / "tdf-contract.schema.json"
+    resource = _default_schema_resource()
+    if isinstance(resource, Path):
+        return resource
+    raise ContractValidationError("The default contract schema is not available as a filesystem path.")
 
 
 def load_json(path: str | Path) -> dict[str, Any]:
     resolved = Path(path)
     with resolved.open("r", encoding="utf-8") as file:
         data = json.load(file)
-    if not isinstance(data, dict):
-        raise ContractValidationError(f"Expected JSON object in {resolved}")
-    return data
+    return _json_object(data, resolved)
 
 
 def load_schema(schema_path: str | Path | None = None) -> dict[str, Any]:
-    return load_json(schema_path or default_schema_path())
+    if schema_path is not None:
+        return load_json(schema_path)
+    return _load_default_schema()
 
 
 def validate_contract_data(data: dict[str, Any], schema: dict[str, Any] | None = None) -> ValidationResult:
@@ -120,6 +125,22 @@ def _format_validation_error(error: ValidationError) -> str:
     if not location:
         location = "<root>"
     return f"{location}: {error.message}"
+
+
+def _default_schema_resource() -> Any:
+    return resources.files(__package__).joinpath(*_SCHEMA_RESOURCE)
+
+
+def _load_default_schema() -> dict[str, Any]:
+    resource = _default_schema_resource()
+    data = json.loads(resource.read_text(encoding="utf-8"))
+    return _json_object(data, resource)
+
+
+def _json_object(data: Any, source: Any) -> dict[str, Any]:
+    if not isinstance(data, dict):
+        raise ContractValidationError(f"Expected JSON object in {source}")
+    return data
 
 
 def _format_validation_result(result: ValidationResult) -> str:
