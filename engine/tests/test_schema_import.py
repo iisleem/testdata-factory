@@ -73,7 +73,9 @@ def test_imports_openapi_selected_operation_request_schema() -> None:
     assert fields["spendLimit"]["constraints"]["minimum"] == 0
     assert fields["spendLimit"]["constraints"]["maximum"] == 1000
     assert fields["marketingOptIn"]["required"] is False
+    assert fields["marketingOptIn"]["businessType"] == "boolean"
     assert contract["scenarios"][0]["fields"]["profileId"]["strategy"] == "valid_uuid"
+    assert contract["scenarios"][0]["fields"]["marketingOptIn"]["strategy"] == "valid_boolean"
 
 
 def test_imports_openapi_operation_by_method_and_path() -> None:

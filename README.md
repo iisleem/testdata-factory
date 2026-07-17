@@ -111,6 +111,16 @@ mvn -f sdk-java/pom.xml package
 (cd sdk-typescript && npm run build && npm pack --pack-destination /tmp/testdata-factory-dist)
 ```
 
+Run the release smoke suite before release acceptance:
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+scripts/release-smoke.sh
+```
+
+The smoke command installs the engine test extras in the active Python environment, runs CLI import/scan/validate/generate checks, exercises API validation and generation responses, and runs the Java and TypeScript SDK tests.
+
 Install browser scanning support when working on form scanning:
 
 ```bash

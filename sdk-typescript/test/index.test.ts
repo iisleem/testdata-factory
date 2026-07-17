@@ -22,6 +22,19 @@ test("creates scenario request", () => {
   assert.equal(scenario.contract().id(), "register");
 });
 
+test("release smoke generates deterministic records", () => {
+  const client = testDataFactory.local().seed("release-ts-sdk");
+
+  const first = client.contract(contractPath).scenario("valid_signup").count(2);
+  const second = client.contract(contractPath).scenario("valid_signup").count(2);
+  const invalidEmailUser = client.contract(contractPath).scenario("invalid_email_format").one();
+
+  assert.deepEqual(first, second);
+  assert.equal(first.length, 2);
+  assert.match(String(first[0].email), /@example\.test$/);
+  assert.equal(invalidEmailUser.email, "not-an-email");
+});
+
 test("generates scenario records", () => {
   const users = testDataFactory
     .local()

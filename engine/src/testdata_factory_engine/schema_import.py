@@ -236,6 +236,8 @@ def _infer_types(name: str, schema: dict[str, Any]) -> tuple[str, str, float, st
 
     if isinstance(schema.get("enum"), list):
         return "enum", "enum", 0.95, "schema:enum"
+    if data_type == "boolean":
+        return data_type, "boolean", 0.78, "schema:type=boolean"
     if schema_format == "email" or _contains(text, "email", "e mail"):
         return "string", "email", 0.95, "schema:email"
     if _contains(text, "phone", "mobile", "telephone", "cell"):
@@ -306,8 +308,6 @@ def _infer_types(name: str, schema: dict[str, Any]) -> tuple[str, str, float, st
         return data_type, "integer", 0.75, "schema:type=integer"
     if data_type == "decimal":
         return data_type, "decimal", 0.75, "schema:type=number"
-    if data_type == "boolean":
-        return data_type, "boolean", 0.78, "schema:type=boolean"
     if data_type == "date":
         return data_type, "date", 0.8, "schema:type=date"
     if data_type == "datetime":
