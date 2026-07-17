@@ -4,9 +4,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 
 public final class ContractDocument {
     private final JsonNode root;
+    private final String defaultSeed;
 
-    ContractDocument(JsonNode root) {
+    ContractDocument(JsonNode root, String defaultSeed) {
         this.root = root;
+        this.defaultSeed = defaultSeed;
     }
 
     public String id() {
@@ -19,5 +21,9 @@ public final class ContractDocument {
 
     public ScenarioRequest scenario(String scenarioId) {
         return new ScenarioRequest(this, scenarioId);
+    }
+
+    String defaultSeed() {
+        return defaultSeed;
     }
 }

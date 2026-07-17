@@ -26,7 +26,7 @@ public final class TestDataFactoryClient {
     public ContractDocument contract(Path path) {
         try {
             JsonNode root = OBJECT_MAPPER.readTree(path.toFile());
-            return new ContractDocument(root);
+            return new ContractDocument(root, defaultSeed);
         } catch (IOException exc) {
             throw new IllegalArgumentException("Unable to load contract: " + path, exc);
         }
