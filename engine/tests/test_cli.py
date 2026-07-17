@@ -23,6 +23,7 @@ def test_help_lists_commands(capsys: pytest.CaptureFixture[str]) -> None:
     output = capsys.readouterr().out
     assert "validate" in output
     assert "generate" in output
+    assert "scan-url" in output
     assert "models" in output
 
 

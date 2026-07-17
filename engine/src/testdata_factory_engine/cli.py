@@ -9,6 +9,7 @@ from typing import Any
 from .contracts import ContractValidationError, load_contract, validate_contract_file
 from .generation import GenerationError, generate_records
 from .models import model_profiles_payload
+from .scanner import ScannerError, scan_contract_draft
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -17,7 +18,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         return int(args.command(args))
-    except (ContractValidationError, GenerationError, OSError, json.JSONDecodeError) as exc:
+    except (ContractValidationError, GenerationError, ScannerError, OSError, json.JSONDecodeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
@@ -41,6 +42,14 @@ def build_parser() -> argparse.ArgumentParser:
     generate_command.add_argument("--count", type=int, default=1, help="Number of records to generate.")
     generate_command.add_argument("--seed", help="Override the contract default seed.")
     generate_command.set_defaults(command=_generate)
+
+    scan_command = subcommands.add_parser("scan-url", help="Scan a URL or local HTML form into a contract draft.")
+    scan_command.add_argument("source", help="URL or local HTML file path to scan.")
+    scan_command.add_argument("--id", dest="contract_id", help="Contract id to use in the draft.")
+    scan_command.add_argument("--output", help="Path to write the .tdf.json draft. Defaults to stdout.")
+    scan_command.add_argument("--locale-language", default="en", help="Locale language code for the draft.")
+    scan_command.add_argument("--locale-country", help="Optional locale country code for the draft.")
+    scan_command.set_defaults(command=_scan_url)
 
     models_command = subcommands.add_parser("models", help="Inspect local model setup.")
     model_subcommands = models_command.add_subparsers(dest="models_command_name", required=True)
@@ -100,6 +109,21 @@ def _generate(args: argparse.Namespace) -> int:
     contract = load_contract(args.contract)
     records = generate_records(contract, args.scenario, count=args.count, seed=args.seed)
     print(json.dumps(records, indent=2))
+    return 0
+
+
+def _scan_url(args: argparse.Namespace) -> int:
+    draft = scan_contract_draft(
+        args.source,
+        contract_id=args.contract_id,
+        locale_language=args.locale_language,
+        locale_country=args.locale_country,
+    )
+    output = json.dumps(draft, indent=2) + "\n"
+    if args.output:
+        Path(args.output).write_text(output, encoding="utf-8")
+    else:
+        print(output, end="")
     return 0
 
 
