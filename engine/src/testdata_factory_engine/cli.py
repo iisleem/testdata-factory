@@ -8,25 +8,7 @@ from typing import Any
 
 from .contracts import ContractValidationError, load_contract
 from .generation import GenerationError, generate_records
-
-
-MODEL_PROFILES = {
-    "light": {
-        "accuracy": "lower",
-        "hardware": "low",
-        "examples": ["qwen3:4b", "llama3.2:3b", "phi4-mini"],
-    },
-    "balanced": {
-        "accuracy": "medium",
-        "hardware": "moderate",
-        "examples": ["qwen3:14b", "mistral-nemo", "gemma3:12b"],
-    },
-    "strong": {
-        "accuracy": "high",
-        "hardware": "high",
-        "examples": ["qwen3:32b", "deepseek-r1:32b", "gemma3:27b"],
-    },
-}
+from .models import model_profiles_payload
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -103,7 +85,7 @@ def _generate(args: argparse.Namespace) -> int:
 
 
 def _models_doctor(args: argparse.Namespace) -> int:
-    print(json.dumps({"profiles": MODEL_PROFILES}, indent=2))
+    print(json.dumps({"profiles": model_profiles_payload()}, indent=2))
     return 0
 
 
