@@ -22,7 +22,10 @@ jobs:
           cache: pip
 
       - name: Install engine
-        run: python -m pip install -e 'engine[dev,server]'
+        run: python -m pip install -e 'engine[dev,server,scanner]'
+
+      - name: Install browser for scanner tests
+        run: python -m playwright install --with-deps chromium
 
       - name: Run engine tests
         working-directory: engine

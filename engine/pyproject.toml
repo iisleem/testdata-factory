@@ -61,6 +61,9 @@ packages = ["src/testdata_factory_engine"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+  "release_smoke: release-level smoke coverage for CLI, API, and SDK workflows"
+]
 filterwarnings = [
   "ignore:Using `httpx` with `starlette.testclient` is deprecated:starlette.exceptions.StarletteDeprecationWarning"
 ]

@@ -42,6 +42,20 @@ class TestDataFactoryClientTest {
     }
 
     @Test
+    void releaseSmokeGeneratesDeterministicRecords() {
+        TestDataFactoryClient client = TestDataFactory.local().seed("release-java-sdk");
+
+        List<Map<String, Object>> first = client.contract(CONTRACT).scenario("valid_signup").count(2);
+        List<Map<String, Object>> second = client.contract(CONTRACT).scenario("valid_signup").count(2);
+        Map<String, Object> invalidEmailUser = client.contract(CONTRACT).scenario("invalid_email_format").one();
+
+        assertEquals(first, second);
+        assertEquals(2, first.size());
+        assertTrue(first.get(0).get("email").toString().endsWith("@example.test"));
+        assertEquals("not-an-email", invalidEmailUser.get("email"));
+    }
+
+    @Test
     void generatesScenarioRecords() {
         List<Map<String, Object>> users = TestDataFactory.local()
             .seed("java-sdk")
