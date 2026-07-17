@@ -1,0 +1,50 @@
+# OS/editor files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+
+# Node.js
+node_modules/
+coverage/
+.turbo/
+.next/
+*.tsbuildinfo
+
+# Java
+target/
+build/
+.gradle/
+out/
+
+# Generated artifacts
+reports/
+test-results/
+playwright-report/
+allure-results/
+allure-report/
+traces/
+videos/
+screenshots/
+
+# Local model/runtime state
+.tdf/
+*.log
