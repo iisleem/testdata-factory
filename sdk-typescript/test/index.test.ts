@@ -89,6 +89,18 @@ test("applies negative scenario strategies", () => {
   assert.match(String(user.password), /^Tdf!/);
 });
 
+test("applies generated import negative scenario strategies", () => {
+  const contract = new ContractDocument(generatedImportNegativeContract(), "ts-sdk");
+
+  const invalidPhoneUser = contract.scenario("invalid_phone_format").one();
+  const weakPasswordUser = contract.scenario("weak_password").one();
+
+  assert.equal(invalidPhoneUser.phone, "not-a-phone");
+  assert.match(String(invalidPhoneUser.password), /^Tdf!/);
+  assert.equal(weakPasswordUser.password, "password");
+  assert.match(String(weakPasswordUser.phone), /^\+155501/);
+});
+
 test("unknown scenario fails clearly", () => {
   const scenario = testDataFactory.local().contract(contractPath).scenario("missing_scenario");
 
@@ -146,6 +158,62 @@ function businessTypeContract(businessTypes: string[]): ContractJson {
     generation: {
       deterministic: true,
       defaultSeed: "business-type-suite",
+    },
+    validation: {
+      status: "valid",
+    },
+  };
+}
+
+function generatedImportNegativeContract(): ContractJson {
+  return {
+    schemaVersion: "1.0",
+    id: "generated-import-negatives",
+    source: {
+      type: "manual",
+      value: "generated-import-negatives",
+    },
+    locale: {
+      language: "en",
+      country: "US",
+    },
+    fields: {
+      phone: {
+        dataType: "string",
+        businessType: "phone_number",
+        required: true,
+      },
+      password: {
+        dataType: "string",
+        businessType: "password",
+        required: true,
+      },
+    },
+    scenarios: [
+      {
+        id: "invalid_phone_format",
+        kind: "negative",
+        description: "Phone field contains an invalid number.",
+        fields: {
+          phone: {
+            strategy: "invalid_phone_format",
+          },
+        },
+      },
+      {
+        id: "weak_password",
+        kind: "negative",
+        description: "Password field contains an obviously weak value.",
+        fields: {
+          password: {
+            strategy: "weak_password",
+          },
+        },
+      },
+    ],
+    generation: {
+      deterministic: true,
+      defaultSeed: "generated-import-suite",
     },
     validation: {
       status: "valid",

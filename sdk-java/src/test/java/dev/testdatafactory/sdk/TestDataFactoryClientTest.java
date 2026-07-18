@@ -112,6 +112,19 @@ class TestDataFactoryClientTest {
     }
 
     @Test
+    void appliesGeneratedImportNegativeScenarioStrategies() {
+        ContractDocument contract = new ContractDocument(generatedImportNegativeContract(), "java-sdk");
+
+        Map<String, Object> invalidPhoneUser = contract.scenario("invalid_phone_format").one();
+        Map<String, Object> weakPasswordUser = contract.scenario("weak_password").one();
+
+        assertEquals("not-a-phone", invalidPhoneUser.get("phone"));
+        assertTrue(invalidPhoneUser.get("password").toString().startsWith("Tdf!"));
+        assertEquals("password", weakPasswordUser.get("password"));
+        assertTrue(weakPasswordUser.get("phone").toString().startsWith("+155501"));
+    }
+
+    @Test
     void unknownScenarioFailsClearly() {
         ScenarioRequest scenario = TestDataFactory.local().contract(CONTRACT).scenario("missing_scenario");
 
@@ -170,6 +183,37 @@ class TestDataFactoryClientTest {
                     )
                 ),
                 "generation", Map.of("deterministic", true, "defaultSeed", "business-type-suite"),
+                "validation", Map.of("status", "valid")
+            )
+        );
+    }
+
+    private static JsonNode generatedImportNegativeContract() {
+        return OBJECT_MAPPER.valueToTree(
+            Map.of(
+                "schemaVersion", "1.0",
+                "id", "generated-import-negatives",
+                "source", Map.of("type", "manual", "value", "generated-import-negatives"),
+                "locale", Map.of("language", "en", "country", "US"),
+                "fields", Map.of(
+                    "phone", Map.of("dataType", "string", "businessType", "phone_number", "required", true),
+                    "password", Map.of("dataType", "string", "businessType", "password", "required", true)
+                ),
+                "scenarios", List.of(
+                    Map.of(
+                        "id", "invalid_phone_format",
+                        "kind", "negative",
+                        "description", "Phone field contains an invalid number.",
+                        "fields", Map.of("phone", Map.of("strategy", "invalid_phone_format"))
+                    ),
+                    Map.of(
+                        "id", "weak_password",
+                        "kind", "negative",
+                        "description", "Password field contains an obviously weak value.",
+                        "fields", Map.of("password", Map.of("strategy", "weak_password"))
+                    )
+                ),
+                "generation", Map.of("deterministic", true, "defaultSeed", "generated-import-suite"),
                 "validation", Map.of("status", "valid")
             )
         );
