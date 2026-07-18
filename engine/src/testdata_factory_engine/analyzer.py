@@ -99,9 +99,6 @@ def infer_field(candidate: FieldCandidate) -> dict[str, Any]:
     if candidate.input_type == "number":
         return _field(candidate, "decimal", "decimal", 0.68, ["input[type=number]"])
 
-    if _matches(candidate, text, signals, words={"address", "address line", "street", "street address"}, autocomplete={"street-address", "address-line1", "address-line2"}):
-        return _field(candidate, "string", "address_line", 0.82, signals)
-
     if _matches(candidate, text, signals, words={"city"}, autocomplete={"address-level2"}):
         return _field(candidate, "string", "city", 0.82, signals)
 
@@ -116,6 +113,9 @@ def infer_field(candidate: FieldCandidate) -> dict[str, Any]:
 
     if _matches(candidate, text, signals, words={"country"}, autocomplete={"country-name"}):
         return _field(candidate, "string", "country", 0.82, signals)
+
+    if _matches(candidate, text, signals, words={"address", "address line", "street", "street address"}, autocomplete={"street-address", "address-line1", "address-line2"}):
+        return _field(candidate, "string", "address_line", 0.82, signals)
 
     if _matches(candidate, text, signals, input_types={"url"}, words={"url", "website", "web site", "link"}):
         return _field(candidate, "string", "url", 0.86, signals, {"format": "uri"})

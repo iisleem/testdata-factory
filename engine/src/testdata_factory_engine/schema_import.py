@@ -246,7 +246,7 @@ def _infer_types(name: str, schema: dict[str, Any]) -> tuple[str, str, float, st
         return "string", "last_name", 0.88, "schema:name:last_name"
     if _contains(text, "username", "user name", "login", "login id", "user id"):
         return "string", "username", 0.84, "schema:name:username"
-    if text.strip() in {"name", "full name", "fullname"} or _contains(text, "display name", "contact name"):
+    if text.strip() in {"name", "full name", "fullname"} or _contains(text, "full name", "display name", "contact name"):
         return "string", "full_name", 0.82, "schema:name:full_name"
     if _contains(text, "birth date", "date of birth", "birthdate", "birthday", "dob"):
         return "date", "date_of_birth", 0.88, "schema:name:date_of_birth"
@@ -590,7 +590,11 @@ def _contains(text: str, *phrases: str) -> bool:
     compact_text = text.replace(" ", "")
     for phrase in phrases:
         normalized = _split_words(phrase).lower()
-        if normalized in text or normalized.replace(" ", "") in compact_text:
+        if " " in normalized:
+            if normalized in text or normalized.replace(" ", "") in compact_text:
+                return True
+            continue
+        if re.search(rf"\b{re.escape(normalized)}\b", text) is not None:
             return True
     return False
 
