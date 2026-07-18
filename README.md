@@ -219,6 +219,19 @@ const invalidEmailUser = testDataFactory
 
 See [User Manual](docs/user-manual.md#sdks) for SDK setup and source-tree examples.
 
+Framework examples:
+
+- [Python pytest](examples/frameworks/python-pytest/README.md)
+- [Java JUnit 5](examples/frameworks/java-junit/README.md)
+- [TypeScript Playwright](examples/frameworks/typescript-playwright/README.md)
+
+## Choosing An Integration Mode
+
+- Use SDK direct usage when tests need records inline and can load a reviewed contract from the source tree.
+- Use CLI fixture generation when CI or a shared fixture step should write deterministic JSON before tests run.
+- Use the self-hosted API when multiple services or languages need the same validation and generation endpoint inside your network.
+- Use scan/import plus review when starting from an HTML form, JSON Schema, or OpenAPI request body; commit the reviewed `.tdf.json` contract before relying on it in automation.
+
 ## Documentation
 
 - [User Manual](docs/user-manual.md)
