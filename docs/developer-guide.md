@@ -10,6 +10,7 @@ This guide is for contributors working from the source repository.
 | `sdk-java/` | Java SDK source package and tests. |
 | `sdk-typescript/` | TypeScript SDK source package and tests. |
 | `examples/` | Contracts and import inputs used by the docs. |
+| `examples/frameworks/` | Lightweight framework integration examples for automation engineers. |
 | `specs/` | Published OpenAPI and contract schema specs. |
 | `docs/` | User and developer documentation. |
 | `CHANGELOG.md` | Release notes for package-ready changes. |
@@ -123,6 +124,8 @@ tdf scan --json-schema examples/schemas/customer.schema.json --out /tmp/customer
 tdf scan --openapi examples/openapi/customer.openapi.json --operation createCustomer --out /tmp/create-customer.tdf.json
 tdf models doctor
 ```
+
+Framework examples under `examples/frameworks/` should stay source-tree friendly. Prefer concise snippets over adding framework-specific project scaffolding unless the example is meant to be run directly in this repository.
 
 For form scanning:
 

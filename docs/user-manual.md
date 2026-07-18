@@ -54,6 +54,15 @@ mvn -f sdk-java/pom.xml package
 (cd sdk-typescript && npm run build && npm pack --pack-destination /tmp/testdata-factory-dist)
 ```
 
+## Choosing An Integration Mode
+
+Use the integration mode that matches where test data should be owned and reviewed:
+
+- SDK direct usage: best when an automation test needs generated records inline and the test suite can read a committed `.tdf.json` contract. See the [pytest](../examples/frameworks/python-pytest/README.md), [JUnit 5](../examples/frameworks/java-junit/README.md), and [Playwright](../examples/frameworks/typescript-playwright/README.md) examples.
+- CLI fixture generation: best when CI should generate deterministic JSON fixtures before a framework-specific test runner starts.
+- Self-hosted API: best when several services, languages, or teams need one internal validation and generation endpoint.
+- Scan/import plus review: best when creating or refreshing a contract from an HTML form, JSON Schema, or OpenAPI request body. Review and commit the generated contract before using it in tests.
+
 ## CLI
 
 The `tdf` command is installed by the Python engine package.
@@ -332,6 +341,9 @@ Bundled examples:
 - `examples/forms/signup.html`: local form scan input.
 - `examples/schemas/customer.schema.json`: JSON Schema import input.
 - `examples/openapi/customer.openapi.json`: OpenAPI import input.
+- `examples/frameworks/python-pytest/`: pytest direct SDK usage.
+- `examples/frameworks/java-junit/`: JUnit 5 direct SDK usage snippet.
+- `examples/frameworks/typescript-playwright/`: Playwright-style direct SDK usage snippet.
 
 ## Troubleshooting
 
