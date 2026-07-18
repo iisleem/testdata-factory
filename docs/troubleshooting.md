@@ -125,6 +125,17 @@ Path.of("examples/contracts/register.tdf.json")
 
 Use an absolute path when running from a build directory or IDE configuration with a different working directory.
 
-## Model Provider Requests Are Not Implemented
+## Local AI Provider Fails
 
-`tdf models doctor` and `/v1/model-profiles` expose profile metadata. The current deterministic generation workflow does not call model providers. If you create `tdf.config.json`, treat provider settings as local configuration metadata for now.
+Deterministic contract validation and `tdf generate` do not require a model provider. The optional AI workflow does:
+
+```bash
+tdf ai scenarios --contract examples/contracts/register.tdf.json --config examples/ai/ollama.config.json --profile light
+```
+
+If it fails, check:
+
+- The config path exists and contains a `provider` object.
+- The provider is local, such as `type: "ollama"` with `baseUrl: "http://localhost:11434"`.
+- The selected `modelProfile` maps to a model installed in the local runtime.
+- The model response is valid JSON. Provider or model JSON failures are reported as structured errors in the CLI/API response.

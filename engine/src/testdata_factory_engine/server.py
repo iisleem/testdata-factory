@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -8,6 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from .ai import AIWorkflowError, draft_scenarios_with_validation
 from .contracts import (
     FindingSeverity,
     ValidationFinding as ContractValidationFinding,
@@ -16,7 +18,7 @@ from .contracts import (
     validate_contract_data,
 )
 from .generation import GenerationError, generate_records
-from .models import model_profiles_payload
+from .models import LocalModelProvider, ProviderConfig, create_provider, get_model_profile, model_profiles_payload, parse_provider_config
 
 
 class ContractPayload(BaseModel):
@@ -28,6 +30,13 @@ class GeneratePayload(BaseModel):
     scenario_id: str = Field(alias="scenarioId")
     count: int = Field(default=1, ge=1)
     seed: str | None = None
+
+
+class AIScenarioAssistPayload(BaseModel):
+    contract: dict[str, Any]
+    provider: dict[str, Any]
+    model_profile: str = Field(default="balanced", alias="modelProfile")
+    goal: str | None = None
 
 
 class ValidationFinding(BaseModel):
@@ -48,16 +57,29 @@ class GenerateResponse(BaseModel):
     data: list[dict[str, Any]]
 
 
-def create_app() -> FastAPI:
+class AIProviderMetadata(BaseModel):
+    provider_type: str = Field(alias="type")
+    model: str
+
+
+class AIScenarioAssistResponse(BaseModel):
+    mode: str
+    model_profile: str = Field(alias="modelProfile")
+    provider: AIProviderMetadata
+    proposal: dict[str, Any]
+    validation: ValidationResult
+
+
+def create_app(provider_factory: Callable[[ProviderConfig], LocalModelProvider] = create_provider) -> FastAPI:
     app = FastAPI(
         title="TestData Factory API",
-        version="0.1.0",
+        version="1.0.0",
         description="Self-hosted API for contract validation and deterministic test data generation.",
     )
 
     @app.exception_handler(RequestValidationError)
     async def request_validation_handler(request: Request, exc: RequestValidationError):
-        if request.url.path == "/v1/data/generate":
+        if request.url.path in {"/v1/data/generate", "/v1/ai/scenarios"}:
             return _validation_json_response(_request_validation_result(exc.errors()))
         return await request_validation_exception_handler(request, exc)
 
@@ -95,6 +117,56 @@ def create_app() -> FastAPI:
         except GenerationError as exc:
             return _validation_json_response(_generation_error_result(str(exc)), payload.contract)
         return {"data": records}
+
+    @app.post(
+        "/v1/ai/scenarios",
+        summary="Draft scenario additions with local AI validation",
+        response_model=AIScenarioAssistResponse,
+        response_description="AI scenario proposal and structured validation feedback",
+        responses={
+            422: {"model": ValidationResult, "description": "Structured validation feedback"},
+            502: {"model": ValidationResult, "description": "Local model provider failure"},
+        },
+    )
+    def ai_scenarios(payload: AIScenarioAssistPayload):
+        validation_result = validate_contract_data(payload.contract)
+        if not validation_result.is_valid:
+            return _validation_json_response(validation_result, payload.contract)
+
+        try:
+            get_model_profile(payload.model_profile)
+            provider_config = parse_provider_config(payload.provider, profile=payload.model_profile)
+            provider = provider_factory(provider_config)
+        except ValueError as exc:
+            return _validation_json_response(
+                _ai_error_result(
+                    "provider",
+                    str(exc),
+                    "Provide a local provider config with type, baseUrl, model, and an optional local profile override.",
+                ),
+                payload.contract,
+            )
+
+        try:
+            result = draft_scenarios_with_validation(
+                payload.contract,
+                provider,
+                model_profile=payload.model_profile,
+                goal=payload.goal,
+            )
+        except AIWorkflowError as exc:
+            return JSONResponse(
+                status_code=502,
+                content=_validation_payload(
+                    _ai_error_result(
+                        "provider",
+                        str(exc),
+                        "Check that the local model is running and returning the required JSON shape.",
+                    ),
+                    payload.contract,
+                ),
+            )
+        return result.to_dict()
 
     return app
 
@@ -135,6 +207,19 @@ def _generation_error_result(message: str) -> ContractValidationResult:
         if field == "scenarioId"
         else "Update the contract or generation request so data can be generated."
     )
+    return _invalid_result(
+        [
+            ContractValidationFinding(
+                severity="error",
+                field=field,
+                message=message,
+                recommendation=recommendation,
+            )
+        ]
+    )
+
+
+def _ai_error_result(field: str | None, message: str, recommendation: str) -> ContractValidationResult:
     return _invalid_result(
         [
             ContractValidationFinding(

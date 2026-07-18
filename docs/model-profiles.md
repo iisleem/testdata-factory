@@ -40,7 +40,18 @@ The generated file uses the `balanced` profile and an Ollama-style local endpoin
   "provider": {
     "type": "ollama",
     "baseUrl": "http://localhost:11434",
-    "model": "qwen3:14b"
+    "model": "qwen3:14b",
+    "profiles": {
+      "light": {
+        "model": "qwen3:4b"
+      },
+      "balanced": {
+        "model": "qwen3:14b"
+      },
+      "strong": {
+        "model": "qwen3:32b"
+      }
+    }
   },
   "generation": {
     "defaultSeed": "local",
@@ -49,7 +60,19 @@ The generated file uses the `balanced` profile and an Ollama-style local endpoin
 }
 ```
 
-Provider config parsing supports `ollama` and `openai_compatible` provider types. Direct provider requests are not implemented in the current source, so contract validation and data generation should be treated as the stable local workflow for this release.
+Provider config parsing supports `ollama` and local `openai_compatible` provider types. The default config points at a local Ollama-compatible HTTP runtime; no hosted or paid provider is used by default.
+
+Run the optional dual-agent scenario assist workflow with an explicit config:
+
+```bash
+tdf ai scenarios \
+  --contract examples/contracts/register.tdf.json \
+  --config examples/ai/ollama.config.json \
+  --profile light \
+  --goal "Add security and boundary coverage"
+```
+
+The generator agent proposes scenario objects for `contract.scenarios`. The validator agent returns structured feedback with `status`, `score`, and `findings`. Approved scenarios should still be reviewed before being copied into a committed contract.
 
 ## How Profiles Fit The Workflow
 
@@ -58,4 +81,4 @@ Provider config parsing supports `ollama` and `openai_compatible` provider types
 - Generate data from the committed contract using CLI, API, or Python SDK.
 - Run CI without requiring live model access.
 
-This keeps test execution deterministic and local-first, separate from any model-assisted contract drafting or review.
+This keeps test execution deterministic and local-first, while making model-assisted scenario drafting explicit and optional.

@@ -179,6 +179,35 @@
               "items": {
                 "type": ["string", "number", "boolean"]
               }
+            },
+            "unique": {
+              "type": "boolean"
+            }
+          }
+        },
+        "dependencies": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "matchesField": {
+              "type": "string",
+              "minLength": 1
+            },
+            "rangeStartFor": {
+              "type": "string",
+              "minLength": 1
+            },
+            "rangeEndFor": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minFor": {
+              "type": "string",
+              "minLength": 1
+            },
+            "maxFor": {
+              "type": "string",
+              "minLength": 1
             }
           }
         },

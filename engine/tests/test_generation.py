@@ -116,6 +116,45 @@ def test_default_generation_covers_all_schema_business_types() -> None:
     assert re.fullmatch(r"\d{2}:\d{2}:00", record["time"])
 
 
+def test_security_and_robustness_strategies_generate_expected_values() -> None:
+    contract = _advanced_contract()
+    validation = validate_contract_data(contract)
+
+    assert validation.is_valid, validation.to_dict()
+    assert generate_records(contract, "xss_payloads", seed="advanced")[0]["notes"] == "<script>alert('tdf')</script>"
+    assert generate_records(contract, "sql_injection_payloads", seed="advanced")[0]["notes"] == "admin' OR '1'='1"
+    assert generate_records(contract, "null_required_fields", seed="advanced")[0]["email"] is None
+    assert generate_records(contract, "empty_string_fields", seed="advanced")[0]["notes"] == ""
+    assert generate_records(contract, "empty_dependent_date_field", seed="advanced")[0]["endDate"] == ""
+    assert generate_records(contract, "whitespace_only_fields", seed="advanced")[0]["notes"] == "   "
+    assert len(generate_records(contract, "below_min_length_fields", seed="advanced")[0]["notes"]) == 2
+    assert len(generate_records(contract, "over_max_length_fields", seed="advanced")[0]["notes"]) == 11
+    assert generate_records(contract, "boolean_false_boundaries", seed="advanced")[0]["marketingOptIn"] is False
+    assert generate_records(contract, "boolean_true_boundaries", seed="advanced")[0]["marketingOptIn"] is True
+
+    duplicate_records = generate_records(contract, "duplicate_unique_fields", count=2, seed="advanced")
+    assert duplicate_records[0]["email"] == duplicate_records[1]["email"] == "duplicate@example.test"
+
+
+def test_cross_field_dependencies_generate_valid_and_invalid_records() -> None:
+    contract = _advanced_contract()
+
+    happy_record = generate_records(contract, "valid_advanced", seed="advanced")[0]
+    mismatch_record = generate_records(contract, "mismatched_confirmation_fields", seed="advanced")[0]
+    invalid_date_record = generate_records(contract, "invalid_date_ranges", seed="advanced")[0]
+    invalid_numeric_record = generate_records(contract, "invalid_numeric_ranges", seed="advanced")[0]
+    normal_strategy_record = generate_records(contract, "normal_strategy_confirmation_matches", seed="advanced")[0]
+
+    assert happy_record["confirmPassword"] == happy_record["password"]
+    assert happy_record["endDate"] > happy_record["startDate"]
+    assert happy_record["maxGuests"] >= happy_record["minGuests"]
+    assert mismatch_record["confirmPassword"] != mismatch_record["password"]
+    assert invalid_date_record["endDate"] < invalid_date_record["startDate"]
+    assert invalid_numeric_record["maxGuests"] < invalid_numeric_record["minGuests"]
+    assert normal_strategy_record["confirmPassword"] == normal_strategy_record["password"]
+    assert normal_strategy_record["confirmPassword"] != "password"
+
+
 def _schema_business_types() -> list[str]:
     schema = json.loads((ROOT / "specs" / "contract-schema" / "tdf-contract.schema.json").read_text(encoding="utf-8"))
     return schema["$defs"]["field"]["properties"]["businessType"]["enum"]
@@ -167,6 +206,178 @@ def _business_type_field(business_type: str) -> dict:
     elif business_type == "phone_number":
         field["constraints"] = {"country": "US"}
     return field
+
+
+def _advanced_contract() -> dict:
+    return {
+        "schemaVersion": "1.0",
+        "id": "advanced-generation",
+        "source": {
+            "type": "manual",
+            "value": "advanced-generation",
+        },
+        "locale": {
+            "language": "en",
+        },
+        "fields": {
+            "email": {
+                "dataType": "string",
+                "businessType": "email",
+                "required": True,
+                "constraints": {"format": "email", "unique": True},
+            },
+            "password": {
+                "dataType": "string",
+                "businessType": "password",
+                "required": True,
+                "constraints": {"minLength": 12, "maxLength": 72},
+            },
+            "confirmPassword": {
+                "dataType": "string",
+                "businessType": "password",
+                "required": True,
+                "constraints": {"minLength": 12, "maxLength": 72},
+                "dependencies": {"matchesField": "password"},
+            },
+            "startDate": {
+                "dataType": "date",
+                "businessType": "date",
+                "required": True,
+                "dependencies": {"rangeStartFor": "endDate"},
+            },
+            "endDate": {
+                "dataType": "date",
+                "businessType": "date",
+                "required": True,
+                "dependencies": {"rangeEndFor": "startDate"},
+            },
+            "minGuests": {
+                "dataType": "integer",
+                "businessType": "integer",
+                "required": True,
+                "constraints": {"minimum": 1, "maximum": 5},
+                "dependencies": {"minFor": "maxGuests"},
+            },
+            "maxGuests": {
+                "dataType": "integer",
+                "businessType": "integer",
+                "required": True,
+                "constraints": {"minimum": 1, "maximum": 10},
+                "dependencies": {"maxFor": "minGuests"},
+            },
+            "notes": {
+                "dataType": "string",
+                "businessType": "free_text",
+                "required": False,
+                "constraints": {"minLength": 3, "maxLength": 10},
+            },
+            "marketingOptIn": {
+                "dataType": "boolean",
+                "businessType": "boolean",
+                "required": False,
+            },
+        },
+        "scenarios": [
+            {"id": "valid_advanced", "kind": "positive", "description": "Valid advanced fields.", "fields": {}},
+            {
+                "id": "xss_payloads",
+                "kind": "security",
+                "description": "XSS probe.",
+                "fields": {"notes": {"strategy": "xss_payload"}},
+            },
+            {
+                "id": "sql_injection_payloads",
+                "kind": "security",
+                "description": "SQL injection probe.",
+                "fields": {"notes": {"strategy": "sql_injection_payload"}},
+            },
+            {
+                "id": "null_required_fields",
+                "kind": "negative",
+                "description": "Null required field.",
+                "fields": {"email": {"strategy": "null_value"}},
+            },
+            {
+                "id": "empty_string_fields",
+                "kind": "negative",
+                "description": "Empty string field.",
+                "fields": {"notes": {"strategy": "empty_string"}},
+            },
+            {
+                "id": "empty_dependent_date_field",
+                "kind": "negative",
+                "description": "Empty string on a dependent date field.",
+                "fields": {"endDate": {"strategy": "empty_string"}},
+            },
+            {
+                "id": "whitespace_only_fields",
+                "kind": "negative",
+                "description": "Whitespace-only field.",
+                "fields": {"notes": {"strategy": "whitespace_only"}},
+            },
+            {
+                "id": "below_min_length_fields",
+                "kind": "negative",
+                "description": "Below minimum length.",
+                "fields": {"notes": {"strategy": "below_min_length"}},
+            },
+            {
+                "id": "over_max_length_fields",
+                "kind": "negative",
+                "description": "Over maximum length.",
+                "fields": {"notes": {"strategy": "over_max_length"}},
+            },
+            {
+                "id": "duplicate_unique_fields",
+                "kind": "negative",
+                "description": "Duplicate unique field.",
+                "fields": {"email": {"strategy": "duplicate_value"}},
+            },
+            {
+                "id": "boolean_false_boundaries",
+                "kind": "boundary",
+                "description": "False boolean.",
+                "fields": {"marketingOptIn": {"strategy": "boolean_false"}},
+            },
+            {
+                "id": "boolean_true_boundaries",
+                "kind": "boundary",
+                "description": "True boolean.",
+                "fields": {"marketingOptIn": {"strategy": "boolean_true"}},
+            },
+            {
+                "id": "mismatched_confirmation_fields",
+                "kind": "negative",
+                "description": "Password confirmation mismatch.",
+                "fields": {"confirmPassword": {"strategy": "mismatch_field"}},
+            },
+            {
+                "id": "normal_strategy_confirmation_matches",
+                "kind": "positive",
+                "description": "Generated dependent fields honor dependencies after normal strategy generation.",
+                "fields": {"confirmPassword": {"strategy": "weak_password"}},
+            },
+            {
+                "id": "invalid_date_ranges",
+                "kind": "negative",
+                "description": "Date range is reversed.",
+                "fields": {"endDate": {"strategy": "date_before_related_field"}},
+            },
+            {
+                "id": "invalid_numeric_ranges",
+                "kind": "negative",
+                "description": "Maximum is below minimum.",
+                "fields": {"maxGuests": {"strategy": "numeric_max_below_min"}},
+            },
+        ],
+        "generation": {
+            "deterministic": True,
+            "defaultSeed": "advanced-generation-suite",
+        },
+        "validation": {
+            "status": "valid",
+        },
+    }
 
 
 def _iban_is_valid(value: str) -> bool:

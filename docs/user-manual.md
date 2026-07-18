@@ -38,7 +38,7 @@ python -m pip install -e 'engine[dev,server,scanner]'
 
 ## Package Coordinates
 
-The initial release wave is version `0.1.0`.
+The first stable release is version `1.0.0`.
 
 - Python engine and CLI: `testdata-factory-engine`
 - Java SDK: `io.github.iisleem.testdatafactory:testdata-factory`
@@ -153,6 +153,18 @@ tdf import openapi \
 
 The current importer reads JSON request body schemas.
 
+### Import Page Objects
+
+Page object import reads Java, TypeScript, and Python files without executing user code:
+
+```bash
+tdf scan --page-object examples/page-objects/typescript/register.page.ts --id register-page --out /tmp/register-page.tdf.json
+tdf import page-object examples/page-objects/java/RegisterPage.java --id register-page --out /tmp/register-page-java.tdf.json
+tdf import page-object examples/page-objects/python/register_page.py --id register-page --out /tmp/register-page-py.tdf.json
+```
+
+The importer detects common Selenium and Playwright locator fields, `@FindBy` annotations, `By.*` locators, `page.locator` / `getByLabel` / `getByPlaceholder` / `getByRole` style locators, and direct fill/select/check methods. It maps discovered controls through the normal analyzer so field names, labels, placeholders, locator attributes, and input types can infer business types such as email, phone, password, URL, amount, and date. Output contracts use `"source": {"type": "page_object", ...}` and should be reviewed before committing.
+
 ### Inspect Model Profiles
 
 ```bash
@@ -160,6 +172,20 @@ tdf models doctor
 ```
 
 Model profiles are metadata for local analysis setup. Contract-based validation and data generation work without a model provider.
+
+### Draft Scenario Additions With Local AI
+
+AI assistance is opt-in and requires an explicit local provider config:
+
+```bash
+tdf ai scenarios \
+  --contract examples/contracts/register.tdf.json \
+  --config examples/ai/ollama.config.json \
+  --profile light \
+  --goal "Add security and boundary coverage"
+```
+
+The command runs a generator agent followed by a validator agent. The JSON output contains `proposal.scenarios` plus structured `validation` feedback. Review approved scenarios before copying them into `contract.scenarios`; deterministic `tdf generate` does not call the model.
 
 ## API Server
 
@@ -181,6 +207,7 @@ Useful endpoints:
 - `GET /v1/model-profiles`
 - `POST /v1/contracts/validate`
 - `POST /v1/data/generate`
+- `POST /v1/ai/scenarios`
 
 Create a generation request payload from the sample contract:
 
@@ -225,6 +252,28 @@ curl -s \
   -X POST http://127.0.0.1:8000/v1/contracts/validate \
   -H 'content-type: application/json' \
   -d @/tmp/tdf-validate-request.json
+```
+
+Draft scenario additions through the optional local AI endpoint:
+
+```bash
+python - <<'PY'
+import json
+from pathlib import Path
+
+payload = {
+    "contract": json.loads(Path("examples/contracts/register.tdf.json").read_text()),
+    "provider": json.loads(Path("examples/ai/ollama.config.json").read_text())["provider"],
+    "modelProfile": "light",
+    "goal": "Add security and boundary coverage",
+}
+Path("/tmp/tdf-ai-scenarios-request.json").write_text(json.dumps(payload), encoding="utf-8")
+PY
+
+curl -s \
+  -X POST http://127.0.0.1:8000/v1/ai/scenarios \
+  -H 'content-type: application/json' \
+  -d @/tmp/tdf-ai-scenarios-request.json
 ```
 
 For self-hosting, run the API in your own environment and expose it through your normal ingress, authentication, TLS, logging, and rate-limit controls. The repository does not require a hosted TestData Factory service.
@@ -341,6 +390,7 @@ Bundled examples:
 - `examples/forms/signup.html`: local form scan input.
 - `examples/schemas/customer.schema.json`: JSON Schema import input.
 - `examples/openapi/customer.openapi.json`: OpenAPI import input.
+- `examples/page-objects/`: Java, TypeScript, and Python page object import inputs.
 - `examples/frameworks/python-pytest/`: pytest direct SDK usage.
 - `examples/frameworks/java-junit/`: JUnit 5 direct SDK usage snippet.
 - `examples/frameworks/typescript-playwright/`: Playwright-style direct SDK usage snippet.

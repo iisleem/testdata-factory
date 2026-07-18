@@ -101,6 +101,56 @@ test("applies generated import negative scenario strategies", () => {
   assert.match(String(weakPasswordUser.phone), /^\+155501/);
 });
 
+test("applies security robustness boundary and duplicate strategies", () => {
+  const contract = new ContractDocument(advancedGenerationContract(), "ts-sdk-advanced");
+
+  assert.equal(contract.scenario("xss_payloads").one().notes, "<script>alert('tdf')</script>");
+  assert.equal(contract.scenario("sql_injection_payloads").one().notes, "admin' OR '1'='1");
+
+  const nullRecord = contract.scenario("null_required_fields").one();
+  assert.ok(Object.hasOwn(nullRecord, "email"));
+  assert.equal(nullRecord.email, null);
+
+  assert.equal(contract.scenario("empty_string_fields").one().notes, "");
+  assert.equal(contract.scenario("empty_dependent_date_field").one().endDate, "");
+  assert.equal(contract.scenario("whitespace_only_fields").one().notes, "   ");
+  assert.equal(String(contract.scenario("below_min_length_fields").one().notes).length, 2);
+  assert.equal(String(contract.scenario("over_max_length_fields").one().notes).length, 11);
+  assert.equal(contract.scenario("boolean_false_boundaries").one().marketingOptIn, false);
+  assert.equal(contract.scenario("boolean_true_boundaries").one().marketingOptIn, true);
+
+  const duplicateRecords = contract.scenario("duplicate_unique_fields").count(2);
+  assert.equal(duplicateRecords[0].email, "duplicate@example.test");
+  assert.equal(duplicateRecords[0].email, duplicateRecords[1].email);
+});
+
+test("applies cross-field dependencies for valid and invalid records", () => {
+  const contract = new ContractDocument(advancedGenerationContract(), "ts-sdk-advanced");
+
+  const happyRecord = contract.scenario("valid_advanced").one();
+  const explicitValidRecord = contract.scenario("explicit_valid_relationships").one();
+  const rangeEndStrategyRecord = contract.scenario("range_end_after_start_relationship").one();
+  const normalOverrideRecord = contract.scenario("normal_strategy_confirmation_matches").one();
+  const mismatchRecord = contract.scenario("mismatched_confirmation_fields").one();
+  const invalidDateRecord = contract.scenario("invalid_date_ranges").one();
+  const invalidNumericRecord = contract.scenario("invalid_numeric_ranges").one();
+
+  assert.equal(happyRecord.confirmPassword, happyRecord.password);
+  assert.ok(String(happyRecord.endDate) > String(happyRecord.startDate));
+  assert.ok(Number(happyRecord.maxGuests) >= Number(happyRecord.minGuests));
+
+  assert.equal(explicitValidRecord.confirmPassword, explicitValidRecord.password);
+  assert.ok(String(explicitValidRecord.endDate) > String(explicitValidRecord.startDate));
+  assert.ok(Number(explicitValidRecord.maxGuests) >= Number(explicitValidRecord.minGuests));
+
+  assert.ok(String(rangeEndStrategyRecord.endDate) > String(rangeEndStrategyRecord.startDate));
+  assert.equal(normalOverrideRecord.confirmPassword, normalOverrideRecord.password);
+  assert.notEqual(normalOverrideRecord.confirmPassword, "password");
+  assert.notEqual(mismatchRecord.confirmPassword, mismatchRecord.password);
+  assert.ok(String(invalidDateRecord.endDate) < String(invalidDateRecord.startDate));
+  assert.ok(Number(invalidNumericRecord.maxGuests) < Number(invalidNumericRecord.minGuests));
+});
+
 test("unknown scenario fails clearly", () => {
   const scenario = testDataFactory.local().contract(contractPath).scenario("missing_scenario");
 
@@ -214,6 +264,298 @@ function generatedImportNegativeContract(): ContractJson {
     generation: {
       deterministic: true,
       defaultSeed: "generated-import-suite",
+    },
+    validation: {
+      status: "valid",
+    },
+  };
+}
+
+function advancedGenerationContract(): ContractJson {
+  return {
+    schemaVersion: "1.0",
+    id: "advanced-generation",
+    source: {
+      type: "manual",
+      value: "advanced-generation",
+    },
+    locale: {
+      language: "en",
+      country: "US",
+    },
+    fields: {
+      email: {
+        dataType: "string",
+        businessType: "email",
+        required: true,
+        constraints: {
+          format: "email",
+          unique: true,
+        },
+      },
+      password: {
+        dataType: "string",
+        businessType: "password",
+        required: true,
+        constraints: {
+          minLength: 12,
+          maxLength: 72,
+        },
+      },
+      confirmPassword: {
+        dataType: "string",
+        businessType: "password",
+        required: true,
+        constraints: {
+          minLength: 12,
+          maxLength: 72,
+        },
+        dependencies: {
+          matchesField: "password",
+        },
+      },
+      startDate: {
+        dataType: "date",
+        businessType: "date",
+        required: true,
+        dependencies: {
+          rangeStartFor: "endDate",
+        },
+      },
+      endDate: {
+        dataType: "date",
+        businessType: "date",
+        required: true,
+        dependencies: {
+          rangeEndFor: "startDate",
+        },
+      },
+      minGuests: {
+        dataType: "integer",
+        businessType: "integer",
+        required: true,
+        constraints: {
+          minimum: 1,
+          maximum: 5,
+        },
+        dependencies: {
+          minFor: "maxGuests",
+        },
+      },
+      maxGuests: {
+        dataType: "integer",
+        businessType: "integer",
+        required: true,
+        constraints: {
+          minimum: 1,
+          maximum: 10,
+        },
+        dependencies: {
+          maxFor: "minGuests",
+        },
+      },
+      notes: {
+        dataType: "string",
+        businessType: "free_text",
+        required: false,
+        constraints: {
+          minLength: 3,
+          maxLength: 10,
+        },
+      },
+      marketingOptIn: {
+        dataType: "boolean",
+        businessType: "boolean",
+        required: false,
+      },
+    },
+    scenarios: [
+      {
+        id: "valid_advanced",
+        kind: "positive",
+        description: "Valid advanced fields.",
+        fields: {},
+      },
+      {
+        id: "explicit_valid_relationships",
+        kind: "positive",
+        description: "Explicit relational strategies.",
+        fields: {
+          confirmPassword: {
+            strategy: "match_field",
+          },
+          endDate: {
+            strategy: "date_after_related_field",
+          },
+          maxGuests: {
+            strategy: "numeric_max_at_or_above_min",
+          },
+        },
+      },
+      {
+        id: "range_end_after_start_relationship",
+        kind: "positive",
+        description: "Range end strategy keeps end date after start date.",
+        fields: {
+          endDate: {
+            strategy: "range_end_after_start",
+          },
+        },
+      },
+      {
+        id: "normal_strategy_confirmation_matches",
+        kind: "positive",
+        description: "Generated dependent fields honor dependencies after normal strategy generation.",
+        fields: {
+          confirmPassword: {
+            strategy: "weak_password",
+          },
+        },
+      },
+      {
+        id: "xss_payloads",
+        kind: "security",
+        description: "XSS probe.",
+        fields: {
+          notes: {
+            strategy: "xss_payload",
+          },
+        },
+      },
+      {
+        id: "sql_injection_payloads",
+        kind: "security",
+        description: "SQL injection probe.",
+        fields: {
+          notes: {
+            strategy: "sql_injection_payload",
+          },
+        },
+      },
+      {
+        id: "null_required_fields",
+        kind: "negative",
+        description: "Null required field.",
+        fields: {
+          email: {
+            strategy: "null_value",
+          },
+        },
+      },
+      {
+        id: "empty_string_fields",
+        kind: "negative",
+        description: "Empty string field.",
+        fields: {
+          notes: {
+            strategy: "empty_string",
+          },
+        },
+      },
+      {
+        id: "empty_dependent_date_field",
+        kind: "negative",
+        description: "Empty string on a dependent date field.",
+        fields: {
+          endDate: {
+            strategy: "empty_string",
+          },
+        },
+      },
+      {
+        id: "whitespace_only_fields",
+        kind: "negative",
+        description: "Whitespace-only field.",
+        fields: {
+          notes: {
+            strategy: "whitespace_only",
+          },
+        },
+      },
+      {
+        id: "below_min_length_fields",
+        kind: "negative",
+        description: "Below minimum length.",
+        fields: {
+          notes: {
+            strategy: "below_min_length",
+          },
+        },
+      },
+      {
+        id: "over_max_length_fields",
+        kind: "negative",
+        description: "Over maximum length.",
+        fields: {
+          notes: {
+            strategy: "over_max_length",
+          },
+        },
+      },
+      {
+        id: "duplicate_unique_fields",
+        kind: "negative",
+        description: "Duplicate unique field.",
+        fields: {
+          email: {
+            strategy: "duplicate_value",
+          },
+        },
+      },
+      {
+        id: "boolean_false_boundaries",
+        kind: "boundary",
+        description: "False boolean.",
+        fields: {
+          marketingOptIn: {
+            strategy: "boolean_false",
+          },
+        },
+      },
+      {
+        id: "boolean_true_boundaries",
+        kind: "boundary",
+        description: "True boolean.",
+        fields: {
+          marketingOptIn: {
+            strategy: "boolean_true",
+          },
+        },
+      },
+      {
+        id: "mismatched_confirmation_fields",
+        kind: "negative",
+        description: "Password confirmation mismatch.",
+        fields: {
+          confirmPassword: {
+            strategy: "mismatch_field",
+          },
+        },
+      },
+      {
+        id: "invalid_date_ranges",
+        kind: "negative",
+        description: "Date range is reversed.",
+        fields: {
+          endDate: {
+            strategy: "date_before_related_field",
+          },
+        },
+      },
+      {
+        id: "invalid_numeric_ranges",
+        kind: "negative",
+        description: "Maximum is below minimum.",
+        fields: {
+          maxGuests: {
+            strategy: "numeric_max_below_min",
+          },
+        },
+      },
+    ],
+    generation: {
+      deterministic: true,
+      defaultSeed: "advanced-generation-suite",
     },
     validation: {
       status: "valid",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -172,15 +173,35 @@ def draft_scenarios(
     ]
 
     scenarios.extend(_negative_scenarios(fields))
+    scenarios.extend(_security_scenarios(fields))
+    scenarios.extend(_robustness_scenarios(fields))
     scenarios.extend(_boundary_scenarios(fields))
+    scenarios.extend(_cross_field_scenarios(fields))
     return scenarios
 
 
 def scenario_strategy(field: dict[str, Any]) -> str:
+    dependencies = field.get("dependencies", {})
+    if isinstance(dependencies, dict):
+        if dependencies.get("matchesField"):
+            return "match_field"
+        if dependencies.get("rangeEndFor"):
+            return "range_end_after_start"
+        if dependencies.get("maxFor"):
+            return "numeric_max_at_or_above_min"
+
     business_type = str(field["businessType"])
     if business_type == "enum" and not field.get("constraints", {}).get("values"):
         return "valid_free_text"
     return DEFAULT_STRATEGIES.get(business_type, "valid_free_text")
+
+
+def annotate_cross_field_dependencies(fields: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    annotated = {field_name: deepcopy(field) for field_name, field in fields.items()}
+    _annotate_password_confirmation_dependencies(annotated)
+    _annotate_date_range_dependencies(annotated)
+    _annotate_numeric_pair_dependencies(annotated)
+    return annotated
 
 
 def _negative_scenarios(fields: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
@@ -213,6 +234,114 @@ def _negative_scenarios(fields: dict[str, dict[str, Any]]) -> list[dict[str, Any
     return scenarios
 
 
+def _security_scenarios(fields: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    security_fields = _text_payload_fields(fields)
+    if not security_fields:
+        return []
+    return [
+        _scenario(
+            "xss_payloads",
+            "security",
+            "Text-like fields contain a common reflected XSS probe.",
+            {field_name: {"strategy": "xss_payload"} for field_name in security_fields},
+        ),
+        _scenario(
+            "sql_injection_payloads",
+            "security",
+            "Text-like fields contain a common SQL injection probe.",
+            {field_name: {"strategy": "sql_injection_payload"} for field_name in security_fields},
+        ),
+    ]
+
+
+def _robustness_scenarios(fields: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    scenarios: list[dict[str, Any]] = []
+
+    null_fields = {
+        field_name: {"strategy": "null_value"}
+        for field_name, field in fields.items()
+        if field.get("required") is True
+    }
+    if null_fields:
+        scenarios.append(
+            _scenario(
+                "null_required_fields",
+                "negative",
+                "Required fields are explicitly set to null.",
+                null_fields,
+            )
+        )
+
+    empty_fields = {field_name: {"strategy": "empty_string"} for field_name in _string_like_fields(fields)}
+    if empty_fields:
+        scenarios.append(
+            _scenario(
+                "empty_string_fields",
+                "negative",
+                "String-like fields are submitted as empty strings.",
+                empty_fields,
+            )
+        )
+
+    whitespace_fields = {field_name: {"strategy": "whitespace_only"} for field_name in _string_like_fields(fields)}
+    if whitespace_fields:
+        scenarios.append(
+            _scenario(
+                "whitespace_only_fields",
+                "negative",
+                "String-like fields contain only whitespace.",
+                whitespace_fields,
+            )
+        )
+
+    below_min_length_fields = {
+        field_name: {"strategy": "below_min_length"}
+        for field_name, field in fields.items()
+        if _positive_int_constraint(field, "minLength")
+    }
+    if below_min_length_fields:
+        scenarios.append(
+            _scenario(
+                "below_min_length_fields",
+                "negative",
+                "String fields are one character below their minimum length.",
+                below_min_length_fields,
+            )
+        )
+
+    over_max_length_fields = {
+        field_name: {"strategy": "over_max_length"}
+        for field_name, field in fields.items()
+        if isinstance(field.get("constraints", {}).get("maxLength"), int)
+    }
+    if over_max_length_fields:
+        scenarios.append(
+            _scenario(
+                "over_max_length_fields",
+                "negative",
+                "String fields are one character over their maximum length.",
+                over_max_length_fields,
+            )
+        )
+
+    unique_fields = {
+        field_name: {"strategy": "duplicate_value"}
+        for field_name, field in fields.items()
+        if field.get("constraints", {}).get("unique") is True
+    }
+    if unique_fields:
+        scenarios.append(
+            _scenario(
+                "duplicate_unique_fields",
+                "negative",
+                "Fields marked unique use duplicate values across generated records.",
+                unique_fields,
+            )
+        )
+
+    return scenarios
+
+
 def _boundary_scenarios(fields: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     scenarios: list[dict[str, Any]] = []
     min_length_fields = _string_boundary_fields(fields, "minLength")
@@ -221,6 +350,7 @@ def _boundary_scenarios(fields: dict[str, dict[str, Any]]) -> list[dict[str, Any
     maximum_fields = _numeric_boundary_fields(fields, "maximum")
     enum_fields = _enum_boundary_fields(fields)
     date_fields = _date_boundary_fields(fields)
+    boolean_fields = _boolean_boundary_fields(fields)
 
     if min_length_fields:
         scenarios.append(
@@ -276,6 +406,98 @@ def _boundary_scenarios(fields: dict[str, dict[str, Any]]) -> list[dict[str, Any
                 date_fields,
             )
         )
+    if boolean_fields:
+        scenarios.append(
+            _scenario(
+                "boolean_false_boundaries",
+                "boundary",
+                "Boolean fields use false explicitly.",
+                {field_name: {"strategy": "boolean_false", "value": False} for field_name in boolean_fields},
+            )
+        )
+        scenarios.append(
+            _scenario(
+                "boolean_true_boundaries",
+                "boundary",
+                "Boolean fields use true explicitly.",
+                {field_name: {"strategy": "boolean_true", "value": True} for field_name in boolean_fields},
+            )
+        )
+    return scenarios
+
+
+def _cross_field_scenarios(fields: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    scenarios: list[dict[str, Any]] = []
+
+    confirmation_fields = {
+        field_name: {"strategy": "match_field"}
+        for field_name, field in fields.items()
+        if isinstance(field.get("dependencies", {}).get("matchesField"), str)
+    }
+    if confirmation_fields:
+        scenarios.append(
+            _scenario(
+                "matching_confirmation_fields",
+                "positive",
+                "Confirmation fields match their source fields.",
+                confirmation_fields,
+            )
+        )
+        scenarios.append(
+            _scenario(
+                "mismatched_confirmation_fields",
+                "negative",
+                "Confirmation fields intentionally differ from their source fields.",
+                {field_name: {"strategy": "mismatch_field"} for field_name in confirmation_fields},
+            )
+        )
+
+    date_range_fields = {
+        field_name: {"strategy": "range_end_after_start"}
+        for field_name, field in fields.items()
+        if isinstance(field.get("dependencies", {}).get("rangeEndFor"), str)
+    }
+    if date_range_fields:
+        scenarios.append(
+            _scenario(
+                "valid_date_ranges",
+                "positive",
+                "Date range end fields occur after their start fields.",
+                date_range_fields,
+            )
+        )
+        scenarios.append(
+            _scenario(
+                "invalid_date_ranges",
+                "negative",
+                "Date range end fields occur before their start fields.",
+                {field_name: {"strategy": "date_before_related_field"} for field_name in date_range_fields},
+            )
+        )
+
+    numeric_pair_fields = {
+        field_name: {"strategy": "numeric_max_at_or_above_min"}
+        for field_name, field in fields.items()
+        if isinstance(field.get("dependencies", {}).get("maxFor"), str)
+    }
+    if numeric_pair_fields:
+        scenarios.append(
+            _scenario(
+                "valid_numeric_ranges",
+                "positive",
+                "Numeric maximum fields are at or above their minimum fields.",
+                numeric_pair_fields,
+            )
+        )
+        scenarios.append(
+            _scenario(
+                "invalid_numeric_ranges",
+                "negative",
+                "Numeric maximum fields are below their minimum fields.",
+                {field_name: {"strategy": "numeric_max_below_min"} for field_name in numeric_pair_fields},
+            )
+        )
+
     return scenarios
 
 
@@ -345,6 +567,199 @@ def _date_boundary_fields(fields: dict[str, dict[str, Any]]) -> dict[str, dict[s
         if isinstance(value, str) and value:
             scenario_fields[field_name] = {"strategy": scenario_strategy(field), "value": value}
     return scenario_fields
+
+
+def _boolean_boundary_fields(fields: dict[str, dict[str, Any]]) -> list[str]:
+    return [
+        field_name
+        for field_name, field in fields.items()
+        if field.get("dataType") == "boolean" or field.get("businessType") == "boolean"
+    ]
+
+
+def _text_payload_fields(fields: dict[str, dict[str, Any]]) -> list[str]:
+    return [
+        field_name
+        for field_name, field in fields.items()
+        if field.get("dataType") == "string" and field.get("businessType") != "enum"
+    ]
+
+
+def _string_like_fields(fields: dict[str, dict[str, Any]]) -> list[str]:
+    return [
+        field_name
+        for field_name, field in fields.items()
+        if field.get("dataType") in {"string", "date", "datetime", "time", "enum"}
+    ]
+
+
+def _positive_int_constraint(field: dict[str, Any], constraint_name: str) -> bool:
+    value = field.get("constraints", {}).get(constraint_name)
+    return isinstance(value, int) and value > 0
+
+
+def _annotate_password_confirmation_dependencies(fields: dict[str, dict[str, Any]]) -> None:
+    password_fields = [
+        field_name
+        for field_name, field in fields.items()
+        if field.get("businessType") == "password"
+    ]
+    confirmation_fields = [
+        field_name
+        for field_name in password_fields
+        if _has_any_field_word(fields, field_name, {"confirm", "confirmation", "repeat", "retype", "verify"})
+    ]
+    source_fields = [field_name for field_name in password_fields if field_name not in confirmation_fields]
+
+    for confirmation_field in confirmation_fields:
+        source_field = _best_related_field(confirmation_field, source_fields, fields)
+        if source_field:
+            _set_dependency(
+                fields,
+                confirmation_field,
+                "matchesField",
+                source_field,
+                f"dependency:matchesField={source_field}",
+            )
+
+
+def _annotate_date_range_dependencies(fields: dict[str, dict[str, Any]]) -> None:
+    date_fields = [
+        field_name
+        for field_name, field in fields.items()
+        if field.get("dataType") in {"date", "datetime"} and field.get("businessType") != "date_of_birth"
+    ]
+    start_fields = [field_name for field_name in date_fields if _date_role(fields, field_name) == "start"]
+    end_fields = [field_name for field_name in date_fields if _date_role(fields, field_name) == "end"]
+
+    for start_field in start_fields:
+        end_field = _best_related_field(start_field, end_fields, fields)
+        if end_field:
+            _set_dependency(fields, start_field, "rangeStartFor", end_field, f"dependency:rangeStartFor={end_field}")
+            _set_dependency(fields, end_field, "rangeEndFor", start_field, f"dependency:rangeEndFor={start_field}")
+
+
+def _annotate_numeric_pair_dependencies(fields: dict[str, dict[str, Any]]) -> None:
+    numeric_fields = [
+        field_name
+        for field_name, field in fields.items()
+        if field.get("dataType") in {"integer", "decimal"}
+    ]
+    minimum_fields = [field_name for field_name in numeric_fields if _numeric_role(fields, field_name) == "min"]
+    maximum_fields = [field_name for field_name in numeric_fields if _numeric_role(fields, field_name) == "max"]
+
+    for minimum_field in minimum_fields:
+        maximum_field = _best_related_field(minimum_field, maximum_fields, fields)
+        if maximum_field:
+            _set_dependency(fields, minimum_field, "minFor", maximum_field, f"dependency:minFor={maximum_field}")
+            _set_dependency(fields, maximum_field, "maxFor", minimum_field, f"dependency:maxFor={minimum_field}")
+
+
+def _set_dependency(
+    fields: dict[str, dict[str, Any]],
+    field_name: str,
+    dependency_name: str,
+    related_field: str,
+    signal: str,
+) -> None:
+    dependencies = dict(fields[field_name].get("dependencies", {}))
+    dependencies.setdefault(dependency_name, related_field)
+    fields[field_name]["dependencies"] = dependencies
+
+    inference = fields[field_name].get("inference")
+    if not isinstance(inference, dict):
+        return
+    signals = inference.get("signals")
+    if not isinstance(signals, list):
+        return
+    if signal not in signals:
+        signals.append(signal)
+
+
+def _best_related_field(
+    source_field: str,
+    candidate_fields: list[str],
+    fields: dict[str, dict[str, Any]],
+) -> str | None:
+    if not candidate_fields:
+        return None
+
+    source_stem = _relationship_stem(fields, source_field)
+    for candidate_field in candidate_fields:
+        if candidate_field == source_field:
+            continue
+        if _relationship_stem(fields, candidate_field) == source_stem:
+            return candidate_field
+
+    for candidate_field in candidate_fields:
+        if candidate_field != source_field:
+            return candidate_field
+    return None
+
+
+def _relationship_stem(fields: dict[str, dict[str, Any]], field_name: str) -> tuple[str, ...]:
+    ignored = {
+        "confirm",
+        "confirmation",
+        "repeat",
+        "retype",
+        "verify",
+        "password",
+        "start",
+        "begin",
+        "beginning",
+        "from",
+        "end",
+        "finish",
+        "finished",
+        "to",
+        "date",
+        "time",
+        "at",
+        "min",
+        "minimum",
+        "lower",
+        "least",
+        "max",
+        "maximum",
+        "upper",
+        "most",
+    }
+    tokens = [token for token in _field_tokens(fields, field_name) if token not in ignored]
+    return tuple(tokens)
+
+
+def _date_role(fields: dict[str, dict[str, Any]], field_name: str) -> str | None:
+    text = _field_text(fields, field_name)
+    tokens = set(_field_tokens(fields, field_name))
+    if {"start", "begin", "beginning", "from", "arrival"} & tokens or "check in" in text or "checkin" in text:
+        return "start"
+    if {"end", "finish", "finished", "to", "return", "departure"} & tokens or "check out" in text or "checkout" in text:
+        return "end"
+    return None
+
+
+def _numeric_role(fields: dict[str, dict[str, Any]], field_name: str) -> str | None:
+    tokens = set(_field_tokens(fields, field_name))
+    if {"min", "minimum", "lower", "least"} & tokens:
+        return "min"
+    if {"max", "maximum", "upper", "most"} & tokens:
+        return "max"
+    return None
+
+
+def _has_any_field_word(fields: dict[str, dict[str, Any]], field_name: str, words: set[str]) -> bool:
+    return bool(set(_field_tokens(fields, field_name)) & words)
+
+
+def _field_text(fields: dict[str, dict[str, Any]], field_name: str) -> str:
+    field = fields[field_name]
+    values = [field_name, str(field.get("label", ""))]
+    return _split_words(" ".join(value for value in values if value)).lower()
+
+
+def _field_tokens(fields: dict[str, dict[str, Any]], field_name: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", _field_text(fields, field_name))
 
 
 def _string_value_at_length(field: dict[str, Any], length: int) -> str | None:

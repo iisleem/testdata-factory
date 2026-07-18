@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from .analyzer import draft_scenarios
+from .analyzer import annotate_cross_field_dependencies, draft_scenarios
 from .contracts import validate_contract_data
 
 
@@ -117,6 +117,7 @@ def _build_contract(
     locale: dict[str, str] | None,
     fields: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
+    fields = annotate_cross_field_dependencies(fields)
     return {
         "schemaVersion": "1.0",
         "id": contract_id,
@@ -221,6 +222,9 @@ def _constraints_from_schema(schema: dict[str, Any]) -> dict[str, Any]:
     schema_type = schema.get("type")
     if schema.get("nullable") is True or (isinstance(schema_type, list) and "null" in schema_type):
         constraints["nullable"] = True
+
+    if any(_truthy(schema.get(key)) for key in ("unique", "x-unique", "x-uniqueField", "x-unique-field")):
+        constraints["unique"] = True
 
     return constraints
 
@@ -605,3 +609,11 @@ def _values_constraint_supported(values: list[Any]) -> bool:
 
 def _simple_constraint_value(value: Any) -> bool:
     return isinstance(value, (str, int, float, bool)) and value is not None
+
+
+def _truthy(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes"}
+    return False

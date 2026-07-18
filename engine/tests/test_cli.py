@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from copy import deepcopy
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -27,6 +28,7 @@ def test_help_lists_commands(capsys: pytest.CaptureFixture[str]) -> None:
     assert "validate" in output
     assert "import" in output
     assert "generate" in output
+    assert "ai" in output
     assert "scan" in output
     assert "scan-url" in output
     assert "models" in output
@@ -101,6 +103,109 @@ def test_generate_contract_data(capsys: pytest.CaptureFixture[str]) -> None:
     records = json.loads(capsys.readouterr().out)
     assert len(records) == 1
     assert records[0]["email"].endswith("@example.test")
+
+
+def test_ai_scenarios_uses_config_profile_and_fake_provider(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "tdf.config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "modelProfile": "balanced",
+                "provider": {
+                    "type": "ollama",
+                    "baseUrl": "http://localhost:11434",
+                    "model": "qwen3:14b",
+                    "profiles": {"light": {"model": "qwen3:4b"}},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    captured_config: dict[str, Any] = {}
+
+    def fake_create_provider(config):
+        captured_config["provider"] = config
+        return _FakeAIProvider(
+            model=config.model,
+            responses=[
+                {
+                    "proposal": {
+                        "summary": "Add security coverage.",
+                        "scenarios": [
+                            {
+                                "id": "weak_password_security",
+                                "kind": "security",
+                                "description": "Password is common and should be rejected.",
+                                "fields": {"password": {"strategy": "weak_password"}},
+                            }
+                        ],
+                    }
+                },
+                {
+                    "status": "valid",
+                    "score": 1,
+                    "findings": [
+                        {
+                            "severity": "info",
+                            "field": "proposal.scenarios",
+                            "message": "Proposal is ready for review.",
+                            "recommendation": "Copy approved scenarios into the contract.",
+                        }
+                    ],
+                },
+            ],
+        )
+
+    monkeypatch.setattr(cli, "create_provider", fake_create_provider)
+
+    exit_code = main(
+        [
+            "ai",
+            "scenarios",
+            "--contract",
+            str(CONTRACT),
+            "--config",
+            str(config_path),
+            "--profile",
+            "light",
+            "--goal",
+            "Add security coverage",
+        ]
+    )
+
+    assert exit_code == 0
+    assert captured_config["provider"].model == "qwen3:4b"
+    output = json.loads(capsys.readouterr().out)
+    assert output["mode"] == "scenario_plan"
+    assert output["modelProfile"] == "light"
+    assert output["provider"] == {"type": "ollama", "model": "qwen3:4b"}
+    assert output["proposal"]["scenarios"][0]["id"] == "weak_password_security"
+    assert output["validation"]["status"] == "valid"
+
+
+def test_ai_scenarios_missing_config_reports_clear_error(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    exit_code = main(
+        [
+            "ai",
+            "scenarios",
+            "--contract",
+            str(CONTRACT),
+            "--config",
+            str(tmp_path / "missing.json"),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.out == ""
+    assert "error: AI config file not found:" in captured.err
 
 
 def test_import_json_schema_writes_contract(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -293,3 +398,15 @@ def test_models_doctor_outputs_profiles(capsys: pytest.CaptureFixture[str]) -> N
     assert exit_code == 0
     output = json.loads(capsys.readouterr().out)
     assert set(output["profiles"]) == {"light", "balanced", "strong"}
+
+
+class _FakeAIProvider:
+    provider_type = "ollama"
+    base_url = "http://localhost:11434"
+
+    def __init__(self, *, model: str, responses: list[dict[str, Any]]) -> None:
+        self.model = model
+        self.responses = responses
+
+    def chat_json(self, messages: list[dict[str, str]], response_schema: dict[str, Any]) -> dict[str, Any]:
+        return self.responses.pop(0)

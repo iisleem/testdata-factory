@@ -6,9 +6,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from .ai import AIWorkflowError, draft_scenarios_with_validation
 from .contracts import ContractValidationError, load_contract, validate_contract_file
 from .generation import GenerationError, generate_records
-from .models import model_profiles_payload
+from .models import create_provider, load_model_runtime_config, model_profiles_payload
+from .page_object_import import PageObjectImportError, import_page_object_file
 from .scanner import ScannerError, scan_contract_draft
 from .schema_import import SchemaImportError, import_json_schema_contract, import_openapi_request_contract
 
@@ -19,7 +21,17 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         return int(args.command(args))
-    except (ContractValidationError, GenerationError, ScannerError, SchemaImportError, OSError, json.JSONDecodeError) as exc:
+    except (
+        AIWorkflowError,
+        ContractValidationError,
+        GenerationError,
+        PageObjectImportError,
+        ScannerError,
+        SchemaImportError,
+        OSError,
+        ValueError,
+        json.JSONDecodeError,
+    ) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
@@ -37,7 +49,7 @@ def build_parser() -> argparse.ArgumentParser:
     validate_command.add_argument("--json", action="store_true", help="Print structured validation feedback as JSON.")
     validate_command.set_defaults(command=_validate)
 
-    import_command = subcommands.add_parser("import", help="Import a schema as a .tdf.json contract.")
+    import_command = subcommands.add_parser("import", help="Import a source file as a .tdf.json contract.")
     import_subcommands = import_command.add_subparsers(dest="import_command_name", required=True)
 
     json_schema_command = import_subcommands.add_parser("json-schema", help="Import JSON Schema object properties.")
@@ -55,6 +67,13 @@ def build_parser() -> argparse.ArgumentParser:
     _add_locale_arguments(openapi_command)
     openapi_command.set_defaults(command=_import_openapi)
 
+    page_object_command = import_subcommands.add_parser("page-object", help="Import Page Object/Class locators.")
+    page_object_command.add_argument("page_object", help="Path to a Java, TypeScript, or Python page object file.")
+    page_object_command.add_argument("--id", help="Contract id. Defaults to the class or file name.")
+    page_object_command.add_argument("--out", required=True, help="Path to write the .tdf.json contract.")
+    _add_locale_arguments(page_object_command)
+    page_object_command.set_defaults(command=_import_page_object)
+
     generate_command = subcommands.add_parser("generate", help="Generate test data from a contract scenario.")
     generate_command.add_argument("--contract", required=True, help="Path to a .tdf.json contract.")
     generate_command.add_argument("--scenario", required=True, help="Scenario id to generate.")
@@ -62,11 +81,36 @@ def build_parser() -> argparse.ArgumentParser:
     generate_command.add_argument("--seed", help="Override the contract default seed.")
     generate_command.set_defaults(command=_generate)
 
-    scan_command = subcommands.add_parser("scan", help="Create a .tdf.json contract from a form or schema.")
+    ai_command = subcommands.add_parser("ai", help="Run optional local AI assistance.")
+    ai_subcommands = ai_command.add_subparsers(dest="ai_command_name", required=True)
+    ai_scenarios_command = ai_subcommands.add_parser(
+        "scenarios",
+        help="Draft scenario additions with local generator and validator agents.",
+    )
+    ai_scenarios_command.add_argument("--contract", required=True, help="Path to a reviewed .tdf.json contract.")
+    ai_scenarios_command.add_argument(
+        "--config",
+        default="tdf.config.json",
+        help="Path to local AI provider config. Defaults to tdf.config.json.",
+    )
+    ai_scenarios_command.add_argument(
+        "--profile",
+        choices=["light", "balanced", "strong"],
+        help="Local model profile to use. Defaults to config modelProfile.",
+    )
+    ai_scenarios_command.add_argument(
+        "--goal",
+        help="Plain-language coverage goal for the scenario proposal.",
+    )
+    ai_scenarios_command.add_argument("--out", help="Path to write the structured AI assist result.")
+    ai_scenarios_command.set_defaults(command=_ai_scenarios)
+
+    scan_command = subcommands.add_parser("scan", help="Create a .tdf.json contract from a form, schema, or page object.")
     scan_sources = scan_command.add_mutually_exclusive_group(required=True)
     scan_sources.add_argument("--url", help="URL or local HTML form path to scan.")
     scan_sources.add_argument("--json-schema", help="Path to a JSON Schema document.")
     scan_sources.add_argument("--openapi", help="Path to an OpenAPI JSON document.")
+    scan_sources.add_argument("--page-object", help="Path to a Java, TypeScript, or Python page object file.")
     scan_command.add_argument("--operation", help="Operation id or METHOD /path selector for --openapi.")
     scan_command.add_argument("--id", dest="contract_id", help="Contract id. Defaults to the source or selected operation.")
     scan_command.add_argument("--out", required=True, help="Path to write the .tdf.json contract.")
@@ -105,6 +149,11 @@ def _init(args: argparse.Namespace) -> int:
             "type": "ollama",
             "baseUrl": "http://localhost:11434",
             "model": "qwen3:14b",
+            "profiles": {
+                "light": {"model": "qwen3:4b"},
+                "balanced": {"model": "qwen3:14b"},
+                "strong": {"model": "qwen3:32b"},
+            },
         },
         "generation": {
             "defaultSeed": "local",
@@ -165,11 +214,42 @@ def _import_openapi(args: argparse.Namespace) -> int:
     return 0
 
 
+def _import_page_object(args: argparse.Namespace) -> int:
+    contract = _import_page_object_contract_from_path(
+        Path(args.page_object),
+        contract_id=args.id,
+        locale=_locale(args),
+    )
+    _write_contract(contract, args.out)
+    print(f"Imported contract: {contract['id']}")
+    return 0
+
+
 def _generate(args: argparse.Namespace) -> int:
     contract = load_contract(args.contract)
     records = generate_records(contract, args.scenario, count=args.count, seed=args.seed)
     print(json.dumps(records, indent=2))
     return 0
+
+
+def _ai_scenarios(args: argparse.Namespace) -> int:
+    runtime_config = load_model_runtime_config(args.config, profile=args.profile)
+    provider = create_provider(runtime_config.provider)
+    contract = load_contract(args.contract)
+    result = draft_scenarios_with_validation(
+        contract,
+        provider,
+        model_profile=runtime_config.model_profile,
+        goal=args.goal,
+    )
+    payload = result.to_dict()
+    if args.out:
+        output = Path(args.out)
+        output.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        print(f"Wrote AI scenario assist: {output}")
+    else:
+        print(json.dumps(payload, indent=2))
+    return 0 if result.validation.status != "invalid" else 1
 
 
 def _scan(args: argparse.Namespace) -> int:
@@ -195,8 +275,14 @@ def _scan(args: argparse.Namespace) -> int:
             contract_id=args.contract_id,
             locale=_locale(args),
         )
+    elif args.page_object:
+        contract = _import_page_object_contract_from_path(
+            Path(args.page_object),
+            contract_id=args.contract_id,
+            locale=_locale(args),
+        )
     else:
-        raise SchemaImportError("Choose one scan source: --url, --json-schema, or --openapi")
+        raise SchemaImportError("Choose one scan source: --url, --json-schema, --openapi, or --page-object")
 
     _write_contract(contract, args.out)
     print(f"Wrote contract: {contract['id']}")
@@ -270,6 +356,19 @@ def _import_openapi_contract_from_path(
         operation,
         contract_id=contract_id,
         source_value=str(openapi_path),
+        locale=locale,
+    )
+
+
+def _import_page_object_contract_from_path(
+    page_object_path: Path,
+    *,
+    contract_id: str | None,
+    locale: dict[str, str],
+) -> dict[str, Any]:
+    return import_page_object_file(
+        page_object_path,
+        contract_id=contract_id,
         locale=locale,
     )
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from testdata_factory_engine import FieldCandidate, infer_field
+from testdata_factory_engine.analyzer import annotate_cross_field_dependencies, draft_scenarios
 
 
 def test_infers_email_from_input_type() -> None:
@@ -113,3 +114,90 @@ def test_falls_back_to_low_confidence_free_text() -> None:
 )
 def test_infers_realistic_automation_field_variants(candidate: FieldCandidate, business_type: str) -> None:
     assert infer_field(candidate)["businessType"] == business_type
+
+
+def test_drafts_security_robustness_and_cross_field_scenarios() -> None:
+    fields = annotate_cross_field_dependencies(
+        {
+            "email": _field("string", "email", required=True, constraints={"format": "email", "unique": True}),
+            "password": _field("string", "password", required=True, constraints={"minLength": 12, "maxLength": 72}),
+            "confirmPassword": _field(
+                "string",
+                "password",
+                required=True,
+                label="Confirm password",
+                constraints={"minLength": 12, "maxLength": 72},
+            ),
+            "startDate": _field("date", "date", required=True, label="Start date"),
+            "endDate": _field("date", "date", required=True, label="End date"),
+            "minGuests": _field("integer", "integer", required=True, label="Minimum guests"),
+            "maxGuests": _field("integer", "integer", required=True, label="Maximum guests"),
+            "notes": _field("string", "free_text", constraints={"minLength": 3, "maxLength": 40}),
+            "marketingOptIn": _field("boolean", "boolean"),
+        }
+    )
+
+    assert fields["confirmPassword"]["dependencies"] == {"matchesField": "password"}
+    assert fields["startDate"]["dependencies"] == {"rangeStartFor": "endDate"}
+    assert fields["endDate"]["dependencies"] == {"rangeEndFor": "startDate"}
+    assert fields["minGuests"]["dependencies"] == {"minFor": "maxGuests"}
+    assert fields["maxGuests"]["dependencies"] == {"maxFor": "minGuests"}
+
+    scenarios = {
+        scenario["id"]: scenario
+        for scenario in draft_scenarios(
+            fields,
+            positive_id="valid_payload",
+            positive_description="All fields contain valid values.",
+        )
+    }
+
+    assert {
+        "xss_payloads",
+        "sql_injection_payloads",
+        "null_required_fields",
+        "empty_string_fields",
+        "whitespace_only_fields",
+        "below_min_length_fields",
+        "over_max_length_fields",
+        "duplicate_unique_fields",
+        "boolean_false_boundaries",
+        "boolean_true_boundaries",
+        "matching_confirmation_fields",
+        "mismatched_confirmation_fields",
+        "valid_date_ranges",
+        "invalid_date_ranges",
+        "valid_numeric_ranges",
+        "invalid_numeric_ranges",
+    } <= scenarios.keys()
+    assert scenarios["valid_payload"]["fields"]["confirmPassword"]["strategy"] == "match_field"
+    assert scenarios["valid_payload"]["fields"]["endDate"]["strategy"] == "range_end_after_start"
+    assert scenarios["valid_payload"]["fields"]["maxGuests"]["strategy"] == "numeric_max_at_or_above_min"
+    assert scenarios["duplicate_unique_fields"]["fields"] == {"email": {"strategy": "duplicate_value"}}
+    assert scenarios["mismatched_confirmation_fields"]["fields"] == {"confirmPassword": {"strategy": "mismatch_field"}}
+    assert scenarios["invalid_date_ranges"]["fields"] == {"endDate": {"strategy": "date_before_related_field"}}
+    assert scenarios["invalid_numeric_ranges"]["fields"] == {"maxGuests": {"strategy": "numeric_max_below_min"}}
+
+
+def _field(
+    data_type: str,
+    business_type: str,
+    *,
+    required: bool = False,
+    label: str = "",
+    constraints: dict | None = None,
+) -> dict:
+    field = {
+        "dataType": data_type,
+        "businessType": business_type,
+        "required": required,
+        "inference": {
+            "confidence": 1,
+            "signals": ["test"],
+        },
+    }
+    if label:
+        field["label"] = label
+    if constraints:
+        field["constraints"] = constraints
+    return field

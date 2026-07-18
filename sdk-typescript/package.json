@@ -1,6 +1,6 @@
 {
   "name": "testdata-factory",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "TypeScript SDK for TestData Factory contracts and deterministic test data workflows.",
   "keywords": [
     "automation",

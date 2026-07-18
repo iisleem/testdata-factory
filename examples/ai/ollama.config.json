@@ -1,0 +1,23 @@
+{
+  "modelProfile": "balanced",
+  "provider": {
+    "type": "ollama",
+    "baseUrl": "http://localhost:11434",
+    "model": "qwen3:14b",
+    "profiles": {
+      "light": {
+        "model": "qwen3:4b"
+      },
+      "balanced": {
+        "model": "qwen3:14b"
+      },
+      "strong": {
+        "model": "qwen3:32b"
+      }
+    }
+  },
+  "generation": {
+    "defaultSeed": "local",
+    "includeMetadata": false
+  }
+}

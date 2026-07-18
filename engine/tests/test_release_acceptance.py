@@ -76,30 +76,95 @@ def test_release_1_critical_business_types_match_exactly(acceptance_contracts: d
 
 
 @pytest.mark.parametrize(
-    ("contract_name", "positive_id", "negative_ids", "boundary_ids"),
+    ("contract_name", "positive_id", "scenario_ids", "boundary_ids"),
     [
         (
             "registration_profile_contact_form",
             "valid_form",
-            {"invalid_email_format", "invalid_phone_format", "weak_password", "missing_required_fields"},
+            {
+                "invalid_email_format",
+                "invalid_phone_format",
+                "weak_password",
+                "missing_required_fields",
+                "xss_payloads",
+                "sql_injection_payloads",
+                "null_required_fields",
+                "empty_string_fields",
+                "whitespace_only_fields",
+                "below_min_length_fields",
+                "over_max_length_fields",
+                "matching_confirmation_fields",
+                "mismatched_confirmation_fields",
+            },
             {"min_length_boundaries", "max_length_boundaries", "enum_value_boundaries", "date_boundaries"},
         ),
         (
             "checkout_payment_form",
             "valid_form",
-            {"invalid_email_format", "invalid_phone_format", "missing_required_fields"},
+            {
+                "invalid_email_format",
+                "invalid_phone_format",
+                "missing_required_fields",
+                "xss_payloads",
+                "sql_injection_payloads",
+                "null_required_fields",
+                "empty_string_fields",
+                "whitespace_only_fields",
+                "below_min_length_fields",
+                "over_max_length_fields",
+                "valid_numeric_ranges",
+                "invalid_numeric_ranges",
+            },
             {"min_length_boundaries", "max_length_boundaries", "numeric_minimum_boundaries", "enum_value_boundaries"},
         ),
         (
             "customer_account_json_schema",
             "valid_payload",
-            {"invalid_email_format", "invalid_phone_format", "weak_password", "missing_required_fields"},
-            {"min_length_boundaries", "max_length_boundaries", "numeric_minimum_boundaries", "enum_value_boundaries", "date_boundaries"},
+            {
+                "invalid_email_format",
+                "invalid_phone_format",
+                "weak_password",
+                "missing_required_fields",
+                "xss_payloads",
+                "sql_injection_payloads",
+                "null_required_fields",
+                "empty_string_fields",
+                "whitespace_only_fields",
+                "below_min_length_fields",
+                "over_max_length_fields",
+                "duplicate_unique_fields",
+                "matching_confirmation_fields",
+                "mismatched_confirmation_fields",
+                "valid_numeric_ranges",
+                "invalid_numeric_ranges",
+            },
+            {
+                "min_length_boundaries",
+                "max_length_boundaries",
+                "numeric_minimum_boundaries",
+                "enum_value_boundaries",
+                "date_boundaries",
+                "boolean_false_boundaries",
+                "boolean_true_boundaries",
+            },
         ),
         (
             "booking_order_openapi",
             "valid_payload",
-            {"invalid_email_format", "invalid_phone_format", "missing_required_fields"},
+            {
+                "invalid_email_format",
+                "invalid_phone_format",
+                "missing_required_fields",
+                "xss_payloads",
+                "sql_injection_payloads",
+                "null_required_fields",
+                "empty_string_fields",
+                "whitespace_only_fields",
+                "below_min_length_fields",
+                "over_max_length_fields",
+                "valid_date_ranges",
+                "invalid_date_ranges",
+            },
             {"min_length_boundaries", "max_length_boundaries", "numeric_minimum_boundaries", "enum_value_boundaries", "date_boundaries"},
         ),
     ],
@@ -108,7 +173,7 @@ def test_release_1_contracts_include_usable_scenarios(
     acceptance_contracts: dict[str, dict[str, Any]],
     contract_name: str,
     positive_id: str,
-    negative_ids: set[str],
+    scenario_ids: set[str],
     boundary_ids: set[str],
 ) -> None:
     contract = acceptance_contracts[contract_name]
@@ -117,15 +182,16 @@ def test_release_1_contracts_include_usable_scenarios(
 
     scenarios = {scenario["id"]: scenario for scenario in contract["scenarios"]}
     assert positive_id in scenarios
-    assert negative_ids <= scenarios.keys()
+    assert scenario_ids <= scenarios.keys()
     assert boundary_ids <= scenarios.keys()
 
     happy_record = generate_records(contract, positive_id, seed=f"{contract_name}-happy")[0]
     _assert_happy_record(contract_name, happy_record)
 
-    for scenario_id in sorted(negative_ids):
-        negative_record = generate_records(contract, scenario_id, seed=f"{contract_name}-{scenario_id}")[0]
-        _assert_negative_record(scenarios[scenario_id], negative_record)
+    for scenario_id in sorted(scenario_ids):
+        count = 2 if scenario_id == "duplicate_unique_fields" else 1
+        records = generate_records(contract, scenario_id, count=count, seed=f"{contract_name}-{scenario_id}")
+        _assert_scenario_records(contract, scenarios[scenario_id], records)
 
     for scenario_id in sorted(boundary_ids):
         boundary_record = generate_records(contract, scenario_id, seed=f"{contract_name}-{scenario_id}")[0]
@@ -140,6 +206,7 @@ def _registration_profile_contact_form_contract() -> dict[str, Any]:
             _input("displayName", "Display name", "text", autocomplete="name", minlength=3, maxlength=80),
             _input("email", "Email address", "email", required=True, autocomplete="email", minlength=5, maxlength=120),
             _input("password", "Password", "password", required=True, minlength=12, maxlength=72),
+            _input("confirmPassword", "Confirm password", "password", required=True, minlength=12, maxlength=72),
             _input("mobilePhone", "Mobile phone", "tel", required=True, autocomplete="tel"),
             _input("dateOfBirth", "Date of birth", "date", required=True, validation={"min": "1900-01-01", "max": "2010-12-31"}),
             _input("streetAddress", "Street address", "text", required=True, autocomplete="street-address", minlength=5, maxlength=120),
@@ -171,6 +238,8 @@ def _checkout_payment_form_contract() -> dict[str, Any]:
             _input("billingPostalCode", "Billing postal code", "text", required=True, autocomplete="postal-code", minlength=5, maxlength=10),
             _input("billingCountry", "Billing country", "text", required=True, autocomplete="country-name"),
             _input("orderQuantity", "Quantity", "number", required=True, validation={"min": "1", "max": "10", "step": "1"}),
+            _input("minOrderQuantity", "Minimum quantity", "number", validation={"min": "1", "max": "10", "step": "1"}),
+            _input("maxOrderQuantity", "Maximum quantity", "number", validation={"min": "1", "max": "10", "step": "1"}),
             _input("orderTotal", "Order total amount", "number", required=True, validation={"min": "1", "max": "5000", "step": "0.01"}),
             _select("shippingMethod", "Shipping method", ["standard", "express", "overnight"], required=True),
         ]
@@ -192,6 +261,7 @@ def _customer_account_schema() -> dict[str, Any]:
             "customerId",
             "emailAddress",
             "password",
+            "confirmPassword",
             "phoneNumber",
             "firstName",
             "lastName",
@@ -200,8 +270,9 @@ def _customer_account_schema() -> dict[str, Any]:
         ],
         "properties": {
             "customerId": {"type": "string", "format": "uuid"},
-            "emailAddress": {"type": "string", "format": "email", "minLength": 5, "maxLength": 120},
+            "emailAddress": {"type": "string", "format": "email", "minLength": 5, "maxLength": 120, "x-unique": True},
             "password": {"type": "string", "minLength": 12, "maxLength": 72},
+            "confirmPassword": {"type": "string", "minLength": 12, "maxLength": 72},
             "phoneNumber": {"type": "string", "minLength": 10, "maxLength": 20},
             "firstName": {"type": "string", "minLength": 2, "maxLength": 40},
             "lastName": {"type": "string", "minLength": 2, "maxLength": 40},
@@ -212,6 +283,9 @@ def _customer_account_schema() -> dict[str, Any]:
             "countryCode": {"type": "string", "minLength": 2, "maxLength": 2},
             "accountStatus": {"type": "string", "enum": ["active", "paused", "closed"]},
             "spendLimit": {"type": "number", "minimum": 0, "maximum": 10000},
+            "minSpendLimit": {"type": "number", "minimum": 0, "maximum": 5000},
+            "maxSpendLimit": {"type": "number", "minimum": 0, "maximum": 10000},
+            "marketingOptIn": {"type": "boolean"},
         },
     }
 
@@ -235,6 +309,8 @@ def _booking_order_openapi() -> dict[str, Any]:
                                         "contactEmail",
                                         "contactPhone",
                                         "bookingDate",
+                                        "checkInDate",
+                                        "checkOutDate",
                                         "roomQuantity",
                                         "totalAmount",
                                         "currency",
@@ -245,6 +321,8 @@ def _booking_order_openapi() -> dict[str, Any]:
                                         "contactEmail": {"type": "string", "format": "email", "minLength": 5, "maxLength": 120},
                                         "contactPhone": {"type": "string", "minLength": 10, "maxLength": 20},
                                         "bookingDate": {"type": "string", "format": "date", "example": "2026-08-15"},
+                                        "checkInDate": {"type": "string", "format": "date", "example": "2026-08-15"},
+                                        "checkOutDate": {"type": "string", "format": "date", "example": "2026-08-20"},
                                         "roomQuantity": {"type": "integer", "minimum": 1, "maximum": 5},
                                         "totalAmount": {"type": "number", "minimum": 1, "maximum": 7500},
                                         "currency": {"type": "string", "minLength": 3, "maxLength": 3},
@@ -271,6 +349,7 @@ def _expected_business_types() -> dict[str, FieldExpectations]:
             "displayName": "full_name",
             "email": "email",
             "password": "password",
+            "confirmPassword": "password",
             "mobilePhone": "phone_number",
             "dateOfBirth": "date_of_birth",
             "streetAddress": "address_line",
@@ -291,6 +370,8 @@ def _expected_business_types() -> dict[str, FieldExpectations]:
             "billingPostalCode": "postal_code",
             "billingCountry": "country",
             "orderQuantity": "quantity",
+            "minOrderQuantity": "quantity",
+            "maxOrderQuantity": "quantity",
             "orderTotal": "amount",
             "shippingMethod": "enum",
         },
@@ -298,6 +379,7 @@ def _expected_business_types() -> dict[str, FieldExpectations]:
             "customerId": "uuid",
             "emailAddress": "email",
             "password": "password",
+            "confirmPassword": "password",
             "phoneNumber": "phone_number",
             "firstName": "first_name",
             "lastName": "last_name",
@@ -308,12 +390,17 @@ def _expected_business_types() -> dict[str, FieldExpectations]:
             "countryCode": "country_code",
             "accountStatus": "enum",
             "spendLimit": "amount",
+            "minSpendLimit": "amount",
+            "maxSpendLimit": "amount",
+            "marketingOptIn": "boolean",
         },
         "booking_order_openapi": {
             "guestFullName": "full_name",
             "contactEmail": "email",
             "contactPhone": "phone_number",
             "bookingDate": "date",
+            "checkInDate": "date",
+            "checkOutDate": "date",
             "roomQuantity": "quantity",
             "totalAmount": "amount",
             "currency": "currency",
@@ -333,6 +420,7 @@ def _critical_business_types() -> dict[str, FieldExpectations]:
             "displayName": "full_name",
             "email": "email",
             "password": "password",
+            "confirmPassword": "password",
             "mobilePhone": "phone_number",
             "dateOfBirth": "date_of_birth",
             "streetAddress": "address_line",
@@ -353,12 +441,15 @@ def _critical_business_types() -> dict[str, FieldExpectations]:
             "billingPostalCode": "postal_code",
             "billingCountry": "country",
             "orderQuantity": "quantity",
+            "minOrderQuantity": "quantity",
+            "maxOrderQuantity": "quantity",
             "orderTotal": "amount",
             "shippingMethod": "enum",
         },
         "customer_account_json_schema": {
             "emailAddress": "email",
             "password": "password",
+            "confirmPassword": "password",
             "phoneNumber": "phone_number",
             "firstName": "first_name",
             "lastName": "last_name",
@@ -369,12 +460,17 @@ def _critical_business_types() -> dict[str, FieldExpectations]:
             "countryCode": "country_code",
             "accountStatus": "enum",
             "spendLimit": "amount",
+            "minSpendLimit": "amount",
+            "maxSpendLimit": "amount",
+            "marketingOptIn": "boolean",
         },
         "booking_order_openapi": {
             "guestFullName": "full_name",
             "contactEmail": "email",
             "contactPhone": "phone_number",
             "bookingDate": "date",
+            "checkInDate": "date",
+            "checkOutDate": "date",
             "roomQuantity": "quantity",
             "totalAmount": "amount",
             "orderType": "enum",
@@ -399,6 +495,7 @@ def _assert_registration_record(record: dict[str, Any]) -> None:
     assert EMAIL_PATTERN.match(record["email"])
     assert PHONE_PATTERN.match(record["mobilePhone"])
     assert record["password"].startswith("Tdf!")
+    assert record["confirmPassword"] == record["password"]
     assert ISO_DATE_PATTERN.match(record["dateOfBirth"])
     assert len(record["countryCode"]) == 2
     assert record["contactPreference"] in {"email", "sms", "phone"}
@@ -411,6 +508,7 @@ def _assert_checkout_record(record: dict[str, Any]) -> None:
     assert re.fullmatch(r"\d{3,4}", record["cardCvv"])
     assert EXPIRY_PATTERN.match(record["cardExpiry"])
     assert 1 <= record["orderQuantity"] <= 10
+    assert 1 <= record["minOrderQuantity"] <= record["maxOrderQuantity"] <= 10
     assert 1 <= record["orderTotal"] <= 5000
     assert record["shippingMethod"] in {"standard", "express", "overnight"}
 
@@ -419,16 +517,22 @@ def _assert_account_record(record: dict[str, Any]) -> None:
     assert EMAIL_PATTERN.match(record["emailAddress"])
     assert PHONE_PATTERN.match(record["phoneNumber"])
     assert record["password"].startswith("Tdf!")
+    assert record["confirmPassword"] == record["password"]
     assert ISO_DATE_PATTERN.match(record["dateOfBirth"])
     assert len(record["countryCode"]) == 2
     assert record["accountStatus"] in {"active", "paused", "closed"}
     assert 0 <= record["spendLimit"] <= 10000
+    assert 0 <= record["minSpendLimit"] <= record["maxSpendLimit"] <= 10000
+    assert isinstance(record["marketingOptIn"], bool)
 
 
 def _assert_booking_order_record(record: dict[str, Any]) -> None:
     assert EMAIL_PATTERN.match(record["contactEmail"])
     assert PHONE_PATTERN.match(record["contactPhone"])
     assert ISO_DATE_PATTERN.match(record["bookingDate"])
+    assert ISO_DATE_PATTERN.match(record["checkInDate"])
+    assert ISO_DATE_PATTERN.match(record["checkOutDate"])
+    assert record["checkOutDate"] > record["checkInDate"]
     assert 1 <= record["roomQuantity"] <= 5
     assert 1 <= record["totalAmount"] <= 7500
     assert len(record["currency"]) == 3
@@ -436,7 +540,8 @@ def _assert_booking_order_record(record: dict[str, Any]) -> None:
     assert len(record["billingCountryCode"]) == 2
 
 
-def _assert_negative_record(scenario: dict[str, Any], record: dict[str, Any]) -> None:
+def _assert_scenario_records(contract: dict[str, Any], scenario: dict[str, Any], records: list[dict[str, Any]]) -> None:
+    record = records[0]
     scenario_id = scenario["id"]
     if scenario_id == "invalid_email_format":
         assert any(value == "not-an-email" for value in record.values())
@@ -447,6 +552,55 @@ def _assert_negative_record(scenario: dict[str, Any], record: dict[str, Any]) ->
     elif scenario_id == "missing_required_fields":
         assert scenario["fields"]
         assert not set(scenario["fields"]) & set(record)
+    elif scenario_id == "xss_payloads":
+        assert _scenario_has_value(scenario, record, "<script>alert('tdf')</script>")
+    elif scenario_id == "sql_injection_payloads":
+        assert _scenario_has_value(scenario, record, "admin' OR '1'='1")
+    elif scenario_id == "null_required_fields":
+        assert scenario["fields"]
+        assert all(record[field_name] is None for field_name in scenario["fields"])
+    elif scenario_id == "empty_string_fields":
+        assert all(record[field_name] == "" for field_name in scenario["fields"])
+    elif scenario_id == "whitespace_only_fields":
+        assert all(record[field_name].isspace() for field_name in scenario["fields"])
+    elif scenario_id == "below_min_length_fields":
+        for field_name in scenario["fields"]:
+            assert len(record[field_name]) < contract["fields"][field_name]["constraints"]["minLength"]
+    elif scenario_id == "over_max_length_fields":
+        for field_name in scenario["fields"]:
+            assert len(record[field_name]) > contract["fields"][field_name]["constraints"]["maxLength"]
+    elif scenario_id == "duplicate_unique_fields":
+        assert len(records) == 2
+        for field_name in scenario["fields"]:
+            assert records[0][field_name] == records[1][field_name]
+    elif scenario_id == "matching_confirmation_fields":
+        for field_name in scenario["fields"]:
+            source_field = contract["fields"][field_name]["dependencies"]["matchesField"]
+            assert record[field_name] == record[source_field]
+    elif scenario_id == "mismatched_confirmation_fields":
+        for field_name in scenario["fields"]:
+            source_field = contract["fields"][field_name]["dependencies"]["matchesField"]
+            assert record[field_name] != record[source_field]
+    elif scenario_id == "valid_date_ranges":
+        for field_name in scenario["fields"]:
+            source_field = contract["fields"][field_name]["dependencies"]["rangeEndFor"]
+            assert record[field_name] > record[source_field]
+    elif scenario_id == "invalid_date_ranges":
+        for field_name in scenario["fields"]:
+            source_field = contract["fields"][field_name]["dependencies"]["rangeEndFor"]
+            assert record[field_name] < record[source_field]
+    elif scenario_id == "valid_numeric_ranges":
+        for field_name in scenario["fields"]:
+            source_field = contract["fields"][field_name]["dependencies"]["maxFor"]
+            assert record[field_name] >= record[source_field]
+    elif scenario_id == "invalid_numeric_ranges":
+        for field_name in scenario["fields"]:
+            source_field = contract["fields"][field_name]["dependencies"]["maxFor"]
+            assert record[field_name] < record[source_field]
+
+
+def _scenario_has_value(scenario: dict[str, Any], record: dict[str, Any], expected_value: Any) -> bool:
+    return any(record[field_name] == expected_value for field_name in scenario["fields"])
 
 
 def _assert_boundary_record(

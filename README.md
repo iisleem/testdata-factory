@@ -8,7 +8,7 @@ The core workflow is designed for automation engineers:
 - Review the inferred fields, constraints, and scenarios.
 - Generate stable data in CI, local test runs, SDKs, or a self-hosted API without requiring a paid cloud model.
 
-The initial release wave is version `0.1.0`.
+The first stable release is version `1.0.0`.
 
 ## What Works Today
 
@@ -19,6 +19,7 @@ The initial release wave is version `0.1.0`.
 - Run a self-hosted FastAPI server for validation and generation.
 - Generate locally from Python, Java, and TypeScript SDKs with `.one()` and `.count(n)`.
 - Inspect local model profile metadata for light, balanced, and strong local setups.
+- Optionally run a local dual-agent AI assist workflow to draft scenario additions and receive structured validator feedback.
 
 TestData Factory does not require a hosted service by default. The implemented generation path is contract-based and deterministic, so normal test execution can run fully locally.
 
@@ -100,30 +101,35 @@ tdf scan --url examples/forms/signup.html --id signup-form --out /tmp/signup-for
 
 `--url` accepts a web URL or a local HTML file path. Generated contracts should be reviewed before committing.
 
-### JSON Schema and OpenAPI Import
+### JSON Schema, OpenAPI, and Page Object Import
 
 Use `tdf scan` when you want one command for every source type:
 
 ```bash
 tdf scan --json-schema examples/schemas/customer.schema.json --out /tmp/customer.tdf.json
 tdf scan --openapi examples/openapi/customer.openapi.json --operation createCustomer --out /tmp/create-customer.tdf.json
+tdf scan --page-object examples/page-objects/typescript/register.page.ts --out /tmp/register-page.tdf.json
 ```
 
-Use `tdf import` when you want to call the schema importers directly:
+Use `tdf import` when you want to call an importer directly:
 
 ```bash
 tdf import json-schema examples/schemas/customer.schema.json --out /tmp/customer.tdf.json
 tdf import openapi examples/openapi/customer.openapi.json --operation 'PATCH /v1/customers/{customerId}' --out /tmp/update-customer.tdf.json
+tdf import page-object examples/page-objects/java/RegisterPage.java --id register-page --out /tmp/register-page.tdf.json
 ```
+
+Page object import reads Java, TypeScript, and Python source as text. It detects common Selenium and Playwright locator fields and fill/select/check methods, then uses the same semantic analyzer as form scanning to infer business types such as email, phone, password, URL, amount, and date.
 
 ### Self-Hosted API
 
-The API exposes health, model profile, validation, and generation endpoints:
+The API exposes health, model profile, validation, deterministic generation, and optional AI assist endpoints:
 
 - `GET /health`
 - `GET /v1/model-profiles`
 - `POST /v1/contracts/validate`
 - `POST /v1/data/generate`
+- `POST /v1/ai/scenarios`
 
 Run it locally with:
 
@@ -143,7 +149,9 @@ tdf generate --contract examples/contracts/register.tdf.json --scenario valid_si
 tdf scan --url examples/forms/signup.html --id signup-form --out /tmp/signup-form.tdf.json
 tdf scan --json-schema examples/schemas/customer.schema.json --out /tmp/customer.tdf.json
 tdf scan --openapi examples/openapi/customer.openapi.json --operation createCustomer --out /tmp/create-customer.tdf.json
+tdf scan --page-object examples/page-objects/python/register_page.py --id register-page --out /tmp/register-page.tdf.json
 tdf models doctor
+tdf ai scenarios --contract examples/contracts/register.tdf.json --config examples/ai/ollama.config.json --profile light
 ```
 
 See the [User Manual](docs/user-manual.md) for command details and examples.

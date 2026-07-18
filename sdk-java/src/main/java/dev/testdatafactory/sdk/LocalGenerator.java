@@ -8,12 +8,15 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 final class LocalGenerator {
@@ -34,6 +37,25 @@ final class LocalGenerator {
     );
     private static final List<String> CURRENCIES = List.of("USD", "EUR", "GBP", "CAD", "AUD", "JPY", "JOD");
     private static final DateTimeFormatter DATETIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
+    private static final Set<String> RELATIONAL_STRATEGIES = Set.of(
+        "match_field",
+        "mismatch_field",
+        "range_end_after_start",
+        "date_after_related_field",
+        "date_before_related_field",
+        "numeric_max_at_or_above_min",
+        "numeric_max_below_min"
+    );
+    private static final Set<String> INDEPENDENT_VALUE_STRATEGIES = Set.of(
+        "xss_payload",
+        "sql_injection_payload",
+        "null_value",
+        "empty_string",
+        "whitespace_only",
+        "over_max_length",
+        "below_min_length",
+        "duplicate_value"
+    );
 
     private LocalGenerator() {
     }
@@ -79,9 +101,14 @@ final class LocalGenerator {
                 continue;
             }
 
+            if (RELATIONAL_STRATEGIES.contains(strategy)) {
+                strategy = defaultStrategy(field);
+            }
+
             record.put(fieldName, runStrategy(field, strategy, seed, scenarioId, index, fieldName));
         }
 
+        applyDependencies(record, contract, scenario);
         return record;
     }
 
@@ -170,6 +197,8 @@ final class LocalGenerator {
             case "valid_time" -> validTime(field, seed, scope, index);
             case "valid_datetime" -> validDatetime(field, seed, scope, index);
             case "valid_boolean" -> randomInt(field, seed, scope, index, 0, 1) == 1;
+            case "boolean_false" -> false;
+            case "boolean_true" -> true;
             case "valid_currency" -> choice(field, seed, scope, index, CURRENCIES);
             case "valid_url" -> validUrl(field, seed, scope, index);
             case "valid_domain" -> validDomain(field, seed, scope, index);
@@ -184,6 +213,14 @@ final class LocalGenerator {
             case "valid_expiry_date" -> validExpiryDate(field, seed, scope, index);
             case "valid_otp" -> String.format("%06d", randomInt(field, seed, scope, index, 0, 999999));
             case "valid_free_text" -> "Generated test note " + (index + 1);
+            case "xss_payload" -> "<script>alert('tdf')</script>";
+            case "sql_injection_payload" -> "admin' OR '1'='1";
+            case "null_value" -> null;
+            case "empty_string" -> "";
+            case "whitespace_only" -> "   ";
+            case "over_max_length" -> overMaxLength(field);
+            case "below_min_length" -> belowMinLength(field);
+            case "duplicate_value" -> duplicateValue(field);
             default -> throw new IllegalArgumentException("Unknown strategy: " + strategy);
         };
     }
@@ -285,6 +322,239 @@ final class LocalGenerator {
         int month = rng.nextInt(1, 12);
         int year = 30 + rng.nextInt(0, 9);
         return String.format("%02d/%02d", month, year);
+    }
+
+    private static String overMaxLength(JsonNode field) {
+        JsonNode maximum = field.path("constraints").path("maxLength");
+        int length = maximum.isIntegralNumber() && maximum.asInt() >= 0 ? maximum.asInt() + 1 : 256;
+        return "X".repeat(length);
+    }
+
+    private static String belowMinLength(JsonNode field) {
+        JsonNode minimum = field.path("constraints").path("minLength");
+        int length = minimum.isIntegralNumber() && minimum.asInt() > 0 ? minimum.asInt() - 1 : 0;
+        return "A".repeat(length);
+    }
+
+    private static Object duplicateValue(JsonNode field) {
+        return switch (field.path("businessType").asText()) {
+            case "email" -> boundedEmail(field, "duplicate@example.test");
+            case "username" -> boundedText(field, "duplicate_user");
+            case "uuid" -> "00000000-0000-4000-8000-000000000000";
+            case "integer", "quantity" -> integerMinimum(field);
+            case "decimal", "amount", "percentage" -> (double) numericMinimum(field);
+            case "date", "date_of_birth" -> "2026-01-01";
+            default -> boundedText(field, "duplicate");
+        };
+    }
+
+    private static void applyDependencies(Map<String, Object> record, JsonNode contract, JsonNode scenario) {
+        JsonNode scenarioFields = scenario.path("fields");
+        Iterator<Map.Entry<String, JsonNode>> fields = contract.path("fields").fields();
+
+        while (fields.hasNext()) {
+            Map.Entry<String, JsonNode> entry = fields.next();
+            String fieldName = entry.getKey();
+            JsonNode field = entry.getValue();
+            if (!record.containsKey(fieldName)) {
+                continue;
+            }
+
+            JsonNode override = scenarioFields.path(fieldName);
+            if (override.has("value")) {
+                continue;
+            }
+
+            JsonNode dependencies = field.path("dependencies");
+            if (!dependencies.isObject()) {
+                continue;
+            }
+
+            String strategy = override.has("strategy") ? override.path("strategy").asText() : "";
+            if (INDEPENDENT_VALUE_STRATEGIES.contains(strategy)) {
+                continue;
+            }
+
+            JsonNode matchesField = dependencies.path("matchesField");
+            if (matchesField.isTextual() && record.containsKey(matchesField.asText())) {
+                if ("mismatch_field".equals(strategy)) {
+                    record.put(fieldName, differentValue(record.get(matchesField.asText()), field));
+                } else {
+                    record.put(fieldName, record.get(matchesField.asText()));
+                }
+                continue;
+            }
+
+            JsonNode rangeStart = dependencies.path("rangeEndFor");
+            if (rangeStart.isTextual() && record.containsKey(rangeStart.asText())) {
+                int days = "date_before_related_field".equals(strategy) ? -1 : 7;
+                record.put(fieldName, relativeTemporalValue(record.get(rangeStart.asText()), field, days));
+                continue;
+            }
+
+            JsonNode numericMinimum = dependencies.path("maxFor");
+            if (numericMinimum.isTextual() && record.containsKey(numericMinimum.asText())) {
+                if ("numeric_max_below_min".equals(strategy)) {
+                    record.put(fieldName, relativeNumericValue(record.get(numericMinimum.asText()), field, -1));
+                } else {
+                    record.put(fieldName, validNumericMaxValue(record.get(numericMinimum.asText()), field));
+                }
+            }
+        }
+    }
+
+    private static Object differentValue(Object value, JsonNode field) {
+        if (value == null) {
+            return boundedText(field, "mismatch");
+        }
+        if (value instanceof Boolean booleanValue) {
+            return !booleanValue;
+        }
+        if (value instanceof Integer integerValue) {
+            return integerValue + 1;
+        }
+        if (value instanceof Long longValue) {
+            return longValue + 1;
+        }
+        if (value instanceof Number number) {
+            return Math.round((number.doubleValue() + 1) * 100.0) / 100.0;
+        }
+
+        String original = String.valueOf(value);
+        String candidate = boundedText(field, original + "_mismatch", "X");
+        if (!candidate.equals(original)) {
+            return candidate;
+        }
+        if (original.isEmpty()) {
+            return boundedText(field, "mismatch");
+        }
+        String replacement = original.endsWith("X") ? "Y" : "X";
+        return original.substring(0, original.length() - 1) + replacement;
+    }
+
+    private static String relativeTemporalValue(Object value, JsonNode field, int days) {
+        LocalDateTime parsed = parseTemporalValue(value);
+        LocalDateTime shifted = (parsed != null ? parsed : LocalDateTime.of(2026, 1, 1, 9, 0, 0)).plusDays(days);
+        if ("datetime".equals(field.path("dataType").asText())) {
+            return shifted.format(DATETIME_FORMATTER) + "Z";
+        }
+        return shifted.toLocalDate().toString();
+    }
+
+    private static LocalDateTime parseTemporalValue(Object value) {
+        if (!(value instanceof String text) || text.isEmpty()) {
+            return null;
+        }
+
+        String normalized = text.endsWith("Z") ? text.substring(0, text.length() - 1) : text;
+        try {
+            if (normalized.contains("T")) {
+                return LocalDateTime.parse(normalized);
+            }
+            return LocalDateTime.of(LocalDate.parse(normalized), LocalTime.of(9, 0));
+        } catch (DateTimeParseException exc) {
+            return null;
+        }
+    }
+
+    private static Object validNumericMaxValue(Object value, JsonNode field) {
+        Double baseValue = numberValue(value);
+        double base = baseValue != null ? baseValue : numericMinimum(field);
+        double step = numericStep(field);
+        double candidate = base + step;
+        JsonNode constraints = field.path("constraints");
+        JsonNode maximum = constraints.path("maximum");
+        if (maximum.isNumber() && candidate > maximum.asDouble() && maximum.asDouble() >= base) {
+            candidate = maximum.asDouble();
+        } else if (maximum.isNumber() && maximum.asDouble() < base) {
+            candidate = base;
+        }
+
+        JsonNode minimum = constraints.path("minimum");
+        if (minimum.isNumber() && candidate < minimum.asDouble()) {
+            candidate = minimum.asDouble();
+        }
+
+        return coerceNumberForField(candidate, field);
+    }
+
+    private static Object relativeNumericValue(Object value, JsonNode field, double offset) {
+        Double baseValue = numberValue(value);
+        double base = baseValue != null ? baseValue : numericMinimum(field);
+        return coerceNumberForField(base + (offset * numericStep(field)), field);
+    }
+
+    private static Double numberValue(Object value) {
+        if (value instanceof Boolean) {
+            return null;
+        }
+        if (value instanceof Number number) {
+            return number.doubleValue();
+        }
+        return null;
+    }
+
+    private static double numericStep(JsonNode field) {
+        JsonNode constraints = field.path("constraints");
+        JsonNode step = constraints.path("step");
+        if (step.isMissingNode() || step.isNull() || (step.isNumber() && step.asDouble() == 0.0)) {
+            step = constraints.path("multipleOf");
+        }
+        if (step.isNumber() && step.asDouble() > 0) {
+            return step.asDouble();
+        }
+        return 1;
+    }
+
+    private static int integerMinimum(JsonNode field) {
+        return (int) numericMinimum(field);
+    }
+
+    private static double numericMinimum(JsonNode field) {
+        JsonNode minimum = field.path("constraints").path("minimum");
+        if (minimum.isNumber()) {
+            return minimum.asDouble();
+        }
+        return 1;
+    }
+
+    private static Object coerceNumberForField(double value, JsonNode field) {
+        if ("integer".equals(field.path("dataType").asText())) {
+            return (int) value;
+        }
+        return Math.round(value * 100.0) / 100.0;
+    }
+
+    private static String boundedText(JsonNode field, String value) {
+        return boundedText(field, value, "x");
+    }
+
+    private static String boundedText(JsonNode field, String value, String filler) {
+        JsonNode constraints = field.path("constraints");
+        JsonNode maximum = constraints.path("maxLength");
+        if (maximum.isIntegralNumber() && maximum.asInt() >= 0 && value.length() > maximum.asInt()) {
+            value = value.substring(0, maximum.asInt());
+        }
+
+        JsonNode minimum = constraints.path("minLength");
+        if (minimum.isIntegralNumber() && value.length() < minimum.asInt()) {
+            value += filler.repeat(minimum.asInt() - value.length());
+        }
+        return value;
+    }
+
+    private static String boundedEmail(JsonNode field, String value) {
+        JsonNode constraints = field.path("constraints");
+        JsonNode maximum = constraints.path("maxLength");
+        if (maximum.isIntegralNumber() && maximum.asInt() >= 5 && maximum.asInt() < value.length()) {
+            value = maximum.asInt() < "a@example.test".length() ? "a@b.c" : "a@example.test";
+        }
+
+        JsonNode minimum = constraints.path("minLength");
+        if (minimum.isIntegralNumber() && value.length() < minimum.asInt()) {
+            value = "a".repeat(Math.max(0, minimum.asInt() - "@example.test".length())) + "@example.test";
+        }
+        return value;
     }
 
     private static int randomInt(JsonNode field, String seed, String scope, int index, int minimum, int maximum) {

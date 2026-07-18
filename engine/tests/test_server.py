@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 from copy import deepcopy
 from pathlib import Path
+from typing import Any
 
 from fastapi.testclient import TestClient
 
+from testdata_factory_engine.models import ModelProviderError
 from testdata_factory_engine.server import create_app
 
 
@@ -151,6 +153,117 @@ def test_generate_data_endpoint_rejects_invalid_count() -> None:
     assert body["findings"][0]["recommendation"] == "Use a value greater than or equal to 1."
 
 
+def test_ai_scenarios_endpoint_returns_proposal_and_validation_feedback() -> None:
+    fake_provider = _FakeAIProvider(
+        model="qwen3:4b",
+        responses=[
+            {
+                "proposal": {
+                    "summary": "Add security coverage.",
+                    "scenarios": [
+                        {
+                            "id": "weak_password_security",
+                            "kind": "security",
+                            "description": "Password is common and should be rejected.",
+                            "fields": {"password": {"strategy": "weak_password"}},
+                        }
+                    ],
+                }
+            },
+            {
+                "status": "needs_review",
+                "score": 0.9,
+                "findings": [
+                    {
+                        "severity": "warning",
+                        "field": "proposal.scenarios[0].fields.password",
+                        "message": "Confirm this maps to the app password policy.",
+                        "recommendation": "Run the generated scenario against validation rules.",
+                    }
+                ],
+            },
+        ],
+    )
+    captured_config: dict[str, Any] = {}
+
+    def provider_factory(config):
+        captured_config["provider"] = config
+        fake_provider.model = config.model
+        return fake_provider
+
+    client = TestClient(create_app(provider_factory=provider_factory))
+
+    response = client.post(
+        "/v1/ai/scenarios",
+        json={
+            "contract": CONTRACT,
+            "modelProfile": "light",
+            "provider": {
+                "type": "ollama",
+                "baseUrl": "http://localhost:11434",
+                "model": "qwen3:14b",
+                "profiles": {"light": {"model": "qwen3:4b"}},
+            },
+            "goal": "Add security coverage",
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured_config["provider"].model == "qwen3:4b"
+    body = response.json()
+    assert body["mode"] == "scenario_plan"
+    assert body["modelProfile"] == "light"
+    assert body["provider"] == {"type": "ollama", "model": "qwen3:4b"}
+    assert body["proposal"]["scenarios"][0]["id"] == "weak_password_security"
+    assert body["validation"]["status"] == "needs_review"
+    assert body["validation"]["findings"][0]["severity"] == "warning"
+
+
+def test_ai_scenarios_endpoint_returns_provider_failure_feedback() -> None:
+    fake_provider = _FakeAIProvider(
+        model="qwen3:14b",
+        responses=[ModelProviderError("ollama model response was not valid JSON.")],
+    )
+
+    client = TestClient(create_app(provider_factory=lambda config: fake_provider))
+
+    response = client.post(
+        "/v1/ai/scenarios",
+        json={
+            "contract": CONTRACT,
+            "provider": {
+                "type": "ollama",
+                "baseUrl": "http://localhost:11434",
+                "model": "qwen3:14b",
+            },
+        },
+    )
+
+    assert response.status_code == 502
+    body = response.json()
+    assert body["status"] == "invalid"
+    assert body["findings"] == [
+        {
+            "severity": "error",
+            "field": "provider",
+            "message": "Generator agent failed: ollama model response was not valid JSON.",
+            "recommendation": "Check that the local model is running and returning the required JSON shape.",
+        }
+    ]
+
+
+def test_ai_scenarios_endpoint_requires_explicit_provider_config() -> None:
+    client = TestClient(create_app())
+
+    response = client.post("/v1/ai/scenarios", json={"contract": CONTRACT})
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["status"] == "invalid"
+    assert body["findings"][0]["field"] == "provider"
+    assert body["findings"][0]["recommendation"] == "Provide the required request property."
+
+
 def test_model_profiles_endpoint() -> None:
     client = TestClient(create_app())
 
@@ -166,6 +279,7 @@ def test_static_openapi_spec_is_valid_json() -> None:
     assert spec["openapi"].startswith("3.")
     assert "/health" in spec["paths"]
     assert "/v1/data/generate" in spec["paths"]
+    assert "/v1/ai/scenarios" in spec["paths"]
     assert "ValidationResult" in spec["components"]["schemas"]
 
 
@@ -184,6 +298,9 @@ def test_static_openapi_matches_live_schema_for_generation_contracts() -> None:
         ("/v1/contracts/validate", "200"),
         ("/v1/data/generate", "200"),
         ("/v1/data/generate", "422"),
+        ("/v1/ai/scenarios", "200"),
+        ("/v1/ai/scenarios", "422"),
+        ("/v1/ai/scenarios", "502"),
     ]:
         assert _response_schema(static, path, status_code) == _response_schema(live, path, status_code)
 
@@ -193,3 +310,18 @@ def _response_schema(spec: dict[str, object], path: str, status_code: str) -> di
     assert isinstance(paths, dict)
     response = paths[path]["post"]["responses"][status_code]
     return response["content"]["application/json"]["schema"]
+
+
+class _FakeAIProvider:
+    provider_type = "ollama"
+    base_url = "http://localhost:11434"
+
+    def __init__(self, *, model: str, responses: list[dict[str, Any] | Exception]) -> None:
+        self.model = model
+        self.responses = list(responses)
+
+    def chat_json(self, messages: list[dict[str, str]], response_schema: dict[str, Any]) -> dict[str, Any]:
+        response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
