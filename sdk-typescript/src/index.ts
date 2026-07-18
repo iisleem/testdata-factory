@@ -247,6 +247,8 @@ function runStrategy(
       return "not-an-email";
     case "valid_phone":
       return validPhone(field, seed, scope, index);
+    case "invalid_phone_format":
+      return "not-a-phone";
     case "valid_country_code":
       return choice(field, seed, scope, index, countryCodes);
     case "valid_address_line":
@@ -263,6 +265,8 @@ function runStrategy(
       return "abc";
     case "valid_password":
       return `Tdf!${randomInt(field, seed, scope, index, 100000, 999999)}Pass`;
+    case "weak_password":
+      return "password";
     case "valid_integer":
       return validInteger(field, seed, scope, index);
     case "valid_decimal":

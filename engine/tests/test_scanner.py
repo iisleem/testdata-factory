@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from testdata_factory_engine import validate_contract_data
+from testdata_factory_engine import generate_records, validate_contract_data
 from testdata_factory_engine.scanner import (
     ScannerDependencyError,
     ScannerError,
@@ -98,7 +98,8 @@ def test_builds_valid_contract_draft_from_scanned_controls() -> None:
         locale_country="us",
     )
 
-    validate_contract_data(draft)
+    validation = validate_contract_data(draft)
+    assert validation.is_valid, validation.to_dict()
     assert draft["id"] == "signup-form"
     assert draft["locale"] == {"language": "en", "country": "US"}
     assert draft["validation"]["status"] == "needs_review"
@@ -150,8 +151,100 @@ def test_scan_contract_draft_reads_static_form_when_browser_is_available() -> No
     except ScannerDependencyError as exc:
         pytest.skip(str(exc))
 
-    validate_contract_data(draft)
+    validation = validate_contract_data(draft)
+    assert validation.is_valid, validation.to_dict()
     assert draft["source"]["value"].startswith("file://")
     assert draft["fields"]["firstName"]["required"] is True
     assert draft["fields"]["website"]["label"] == "Website URL"
     assert draft["fields"]["plan"]["constraints"]["values"] == ["basic", "pro"]
+
+
+def test_scanned_contract_drafts_positive_negative_and_boundary_scenarios() -> None:
+    controls = controls_from_payload(
+        [
+            {
+                "tag": "input",
+                "inputType": "email",
+                "name": "workEmail",
+                "label": "Work email",
+                "required": True,
+                "validationAttributes": {"minlength": "6", "maxlength": "80"},
+            },
+            {
+                "tag": "input",
+                "inputType": "tel",
+                "name": "mobilePhone",
+                "label": "Mobile phone",
+                "required": True,
+            },
+            {
+                "tag": "input",
+                "inputType": "password",
+                "name": "password",
+                "label": "Password",
+                "required": True,
+                "validationAttributes": {"minlength": "12", "maxlength": "72"},
+            },
+            {
+                "tag": "input",
+                "inputType": "number",
+                "name": "spendLimit",
+                "label": "Spend limit",
+                "validationAttributes": {"min": "0", "max": "500"},
+            },
+            {
+                "tag": "select",
+                "inputType": "select",
+                "name": "country",
+                "label": "Country",
+                "options": [
+                    {"label": "United States", "value": "US"},
+                    {"label": "Canada", "value": "CA"},
+                ],
+            },
+        ]
+    )
+
+    draft = build_contract_draft(controls, source="https://example.test/signup")
+
+    validation = validate_contract_data(draft)
+    assert validation.is_valid, validation.to_dict()
+    scenarios = {scenario["id"]: scenario for scenario in draft["scenarios"]}
+    assert list(scenarios) == [
+        "valid_form",
+        "invalid_email_format",
+        "invalid_phone_format",
+        "weak_password",
+        "missing_required_fields",
+        "min_length_boundaries",
+        "max_length_boundaries",
+        "numeric_minimum_boundaries",
+        "numeric_maximum_boundaries",
+        "enum_value_boundaries",
+    ]
+    assert scenarios["valid_form"]["fields"]["workEmail"]["strategy"] == "valid_email"
+    assert scenarios["valid_form"]["fields"]["mobilePhone"]["strategy"] == "valid_phone"
+    assert scenarios["valid_form"]["fields"]["password"]["strategy"] == "valid_password"
+    assert scenarios["missing_required_fields"]["fields"] == {
+        "workEmail": {"strategy": "missing_required"},
+        "mobilePhone": {"strategy": "missing_required"},
+        "password": {"strategy": "missing_required"},
+    }
+    assert scenarios["numeric_minimum_boundaries"]["fields"]["spendLimit"]["value"] == 0
+    assert scenarios["numeric_maximum_boundaries"]["fields"]["spendLimit"]["value"] == 500
+    assert scenarios["enum_value_boundaries"]["fields"]["country"]["value"] == "US"
+
+    happy_record = generate_records(draft, "valid_form", seed="scan-suite")[0]
+    invalid_email_record = generate_records(draft, "invalid_email_format", seed="scan-suite")[0]
+    weak_password_record = generate_records(draft, "weak_password", seed="scan-suite")[0]
+    missing_record = generate_records(draft, "missing_required_fields", seed="scan-suite")[0]
+
+    assert happy_record["workEmail"].endswith("@example.test")
+    assert happy_record["mobilePhone"].startswith("+155501")
+    assert happy_record["password"].startswith("Tdf!")
+    assert invalid_email_record["workEmail"] == "not-an-email"
+    assert invalid_email_record["password"].startswith("Tdf!")
+    assert weak_password_record["password"] == "password"
+    assert "workEmail" not in missing_record
+    assert "mobilePhone" not in missing_record
+    assert "password" not in missing_record

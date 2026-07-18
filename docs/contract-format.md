@@ -144,14 +144,15 @@ The current engine implements these strategy names:
 
 ```text
 valid_first_name, valid_last_name, valid_full_name, valid_username,
-valid_email, invalid_email_format, valid_phone, valid_country_code,
+valid_email, invalid_email_format, valid_phone, invalid_phone_format,
+valid_country_code,
 valid_address_line, valid_city, valid_state, valid_postal_code,
-valid_country, invalid_alpha, valid_password, valid_integer,
-valid_decimal, valid_enum, valid_date, valid_time, valid_datetime,
-valid_boolean, valid_currency, valid_url, valid_domain, valid_uuid,
-valid_national_id, valid_passport_number, valid_tax_id,
-valid_account_number, valid_iban, valid_credit_card_number,
-valid_cvv, valid_expiry_date, valid_otp, valid_free_text
+valid_country, invalid_alpha, valid_password, weak_password,
+valid_integer, valid_decimal, valid_enum, valid_date, valid_time,
+valid_datetime, valid_boolean, valid_currency, valid_url, valid_domain,
+valid_uuid, valid_national_id, valid_passport_number, valid_tax_id,
+valid_account_number, valid_iban, valid_credit_card_number, valid_cvv,
+valid_expiry_date, valid_otp, valid_free_text
 ```
 
 When a scenario does not specify a strategy for a field, generation uses the default strategy for that field's `businessType`. A few field types, such as `enum`, require supporting constraints like `constraints.values`.
@@ -178,3 +179,5 @@ When a contract has only warnings, such as missing positive coverage for a requi
 ## Importer Output
 
 Form scans, JSON Schema imports, and OpenAPI imports generate contracts with `validation.status` set to `needs_review`. Review generated contracts before committing them because inference is intentionally transparent and editable.
+
+Generated imports include a positive scenario and, where supported by the fields and constraints, additional negative and boundary scenarios for invalid email or phone values, weak passwords, missing required fields, string length boundaries, numeric minimum and maximum values, enum values, and date example boundaries.

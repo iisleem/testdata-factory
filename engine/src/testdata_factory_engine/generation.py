@@ -134,27 +134,27 @@ def _rng(field: Field, seed: str, scope: str, index: int):
 
 
 def _valid_first_name(field: Field, seed: str, scope: str, index: int) -> str:
-    return _choice(field, seed, scope, index, ["Nora", "Maya", "Adam", "Omar", "Lina", "Sam"])
+    return _bounded_text(field, _choice(field, seed, scope, index, ["Nora", "Maya", "Adam", "Omar", "Lina", "Sam"]))
 
 
 def _valid_last_name(field: Field, seed: str, scope: str, index: int) -> str:
-    return _choice(field, seed, scope, index, ["Stone", "Rivera", "Saleh", "Carter", "Haddad", "Kim"])
+    return _bounded_text(field, _choice(field, seed, scope, index, ["Stone", "Rivera", "Saleh", "Carter", "Haddad", "Kim"]))
 
 
 def _valid_full_name(field: Field, seed: str, scope: str, index: int) -> str:
     first = _valid_first_name(field, seed, f"{scope}:first", index)
     last = _valid_last_name(field, seed, f"{scope}:last", index)
-    return f"{first} {last}"
+    return _bounded_text(field, f"{first} {last}")
 
 
 def _valid_username(field: Field, seed: str, scope: str, index: int) -> str:
     rng = _rng(field, seed, scope, index)
-    return f"user_{rng.randint(1000, 9999)}"
+    return _bounded_text(field, f"user_{rng.randint(1000, 9999)}")
 
 
 def _valid_email(field: Field, seed: str, scope: str, index: int) -> str:
     rng = _rng(field, seed, scope, index)
-    return f"user{index}.{rng.randint(1000, 9999)}@example.test"
+    return _bounded_email(field, f"user{index}.{rng.randint(1000, 9999)}@example.test")
 
 
 def _invalid_email_format(field: Field, seed: str, scope: str, index: int) -> str:
@@ -165,8 +165,12 @@ def _valid_phone(field: Field, seed: str, scope: str, index: int) -> str:
     rng = _rng(field, seed, scope, index)
     country = field.get("constraints", {}).get("country", "US")
     if country == "US":
-        return f"+155501{rng.randint(1000, 9999)}"
-    return f"+100000{rng.randint(1000, 9999)}"
+        return _bounded_text(field, f"+155501{rng.randint(1000, 9999)}", filler="0")
+    return _bounded_text(field, f"+100000{rng.randint(1000, 9999)}", filler="0")
+
+
+def _invalid_phone_format(field: Field, seed: str, scope: str, index: int) -> str:
+    return "not-a-phone"
 
 
 def _valid_country_code(field: Field, seed: str, scope: str, index: int) -> str:
@@ -176,28 +180,31 @@ def _valid_country_code(field: Field, seed: str, scope: str, index: int) -> str:
 def _valid_address_line(field: Field, seed: str, scope: str, index: int) -> str:
     rng = _rng(field, seed, scope, index)
     streets = ["Market Street", "Cedar Avenue", "River Road", "Summit Lane", "Atlas Way"]
-    return f"{rng.randint(100, 999)} {streets[rng.randrange(len(streets))]}"
+    return _bounded_text(field, f"{rng.randint(100, 999)} {streets[rng.randrange(len(streets))]}")
 
 
 def _valid_city(field: Field, seed: str, scope: str, index: int) -> str:
-    return _choice(field, seed, scope, index, ["Springfield", "Riverton", "Fairview", "Georgetown", "Franklin"])
+    return _bounded_text(field, _choice(field, seed, scope, index, ["Springfield", "Riverton", "Fairview", "Georgetown", "Franklin"]))
 
 
 def _valid_state(field: Field, seed: str, scope: str, index: int) -> str:
-    return _choice(field, seed, scope, index, ["CA", "NY", "TX", "WA", "IL", "FL"])
+    return _bounded_text(field, _choice(field, seed, scope, index, ["CA", "NY", "TX", "WA", "IL", "FL"]))
 
 
 def _valid_postal_code(field: Field, seed: str, scope: str, index: int) -> str:
-    return f"{_rng(field, seed, scope, index).randint(10000, 99999)}"
+    return _bounded_text(field, f"{_rng(field, seed, scope, index).randint(10000, 99999)}", filler="0")
 
 
 def _valid_country(field: Field, seed: str, scope: str, index: int) -> str:
-    return _choice(
+    return _bounded_text(
         field,
-        seed,
-        scope,
-        index,
-        ["United States", "Canada", "United Kingdom", "Australia", "Germany", "France", "Jordan"],
+        _choice(
+            field,
+            seed,
+            scope,
+            index,
+            ["United States", "Canada", "United Kingdom", "Australia", "Germany", "France", "Jordan"],
+        ),
     )
 
 
@@ -207,7 +214,11 @@ def _invalid_alpha(field: Field, seed: str, scope: str, index: int) -> str:
 
 def _valid_password(field: Field, seed: str, scope: str, index: int) -> str:
     rng = _rng(field, seed, scope, index)
-    return f"Tdf!{rng.randint(100000, 999999)}Pass"
+    return _bounded_text(field, f"Tdf!{rng.randint(100000, 999999)}Pass", filler="A")
+
+
+def _weak_password(field: Field, seed: str, scope: str, index: int) -> str:
+    return "password"
 
 
 def _valid_integer(field: Field, seed: str, scope: str, index: int) -> int:
@@ -258,17 +269,17 @@ def _valid_boolean(field: Field, seed: str, scope: str, index: int) -> bool:
 
 
 def _valid_currency(field: Field, seed: str, scope: str, index: int) -> str:
-    return _choice(field, seed, scope, index, ["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "JOD"])
+    return _bounded_text(field, _choice(field, seed, scope, index, ["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "JOD"]))
 
 
 def _valid_url(field: Field, seed: str, scope: str, index: int) -> str:
     rng = _rng(field, seed, scope, index)
-    return f"https://app-{rng.randint(100, 999)}.example.test/resource-{index + 1}"
+    return _bounded_url(field, f"https://app-{rng.randint(100, 999)}.example.test/resource-{index + 1}")
 
 
 def _valid_domain(field: Field, seed: str, scope: str, index: int) -> str:
     rng = _rng(field, seed, scope, index)
-    return f"service-{rng.randint(100, 999)}.example.test"
+    return _bounded_domain(field, f"service-{rng.randint(100, 999)}.example.test")
 
 
 def _valid_uuid(field: Field, seed: str, scope: str, index: int) -> str:
@@ -322,11 +333,55 @@ def _valid_otp(field: Field, seed: str, scope: str, index: int) -> str:
 
 
 def _valid_free_text(field: Field, seed: str, scope: str, index: int) -> str:
-    return f"Generated test note {index + 1}"
+    return _bounded_text(field, f"Generated test note {index + 1}")
 
 
 def _choice(field: Field, seed: str, scope: str, index: int, values: list[Any]) -> Any:
     return values[_rng(field, seed, scope, index).randrange(len(values))]
+
+
+def _bounded_text(field: Field, value: str, *, filler: str = "x") -> str:
+    constraints = field.get("constraints", {})
+    minimum = constraints.get("minLength")
+    maximum = constraints.get("maxLength")
+    if isinstance(maximum, int) and maximum >= 0 and len(value) > maximum:
+        value = value[:maximum]
+    if isinstance(minimum, int) and len(value) < minimum:
+        value = value + (filler * (minimum - len(value)))
+    return value
+
+
+def _bounded_email(field: Field, value: str) -> str:
+    constraints = field.get("constraints", {})
+    minimum = constraints.get("minLength")
+    maximum = constraints.get("maxLength")
+    if isinstance(maximum, int) and 5 <= maximum < len(value):
+        value = "a@b.c" if maximum < len("a@example.test") else "a@example.test"
+    if isinstance(minimum, int) and len(value) < minimum:
+        value = f"{'a' * (minimum - len('@example.test'))}@example.test"
+    return value
+
+
+def _bounded_url(field: Field, value: str) -> str:
+    constraints = field.get("constraints", {})
+    minimum = constraints.get("minLength")
+    maximum = constraints.get("maxLength")
+    if isinstance(maximum, int) and len("https://a.test") <= maximum < len(value):
+        value = "https://a.test"
+    if isinstance(minimum, int) and len(value) < minimum:
+        value = f"https://{'a' * (minimum - len('https://.test'))}.test"
+    return value
+
+
+def _bounded_domain(field: Field, value: str) -> str:
+    constraints = field.get("constraints", {})
+    minimum = constraints.get("minLength")
+    maximum = constraints.get("maxLength")
+    if isinstance(maximum, int) and len("a.test") <= maximum < len(value):
+        value = "a.test"
+    if isinstance(minimum, int) and len(value) < minimum:
+        value = f"{'a' * (minimum - len('.test'))}.test"
+    return value
 
 
 def _iban_check_digits(country_code: str, bban: str) -> str:
@@ -368,6 +423,7 @@ STRATEGIES: dict[str, Strategy] = {
     "valid_email": _valid_email,
     "invalid_email_format": _invalid_email_format,
     "valid_phone": _valid_phone,
+    "invalid_phone_format": _invalid_phone_format,
     "valid_country_code": _valid_country_code,
     "valid_address_line": _valid_address_line,
     "valid_city": _valid_city,
@@ -376,6 +432,7 @@ STRATEGIES: dict[str, Strategy] = {
     "valid_country": _valid_country,
     "invalid_alpha": _invalid_alpha,
     "valid_password": _valid_password,
+    "weak_password": _weak_password,
     "valid_integer": _valid_integer,
     "valid_decimal": _valid_decimal,
     "valid_enum": _valid_enum,

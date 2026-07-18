@@ -4,8 +4,8 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from .analyzer import draft_scenarios
 from .contracts import validate_contract_data
-from .generation import DEFAULT_STRATEGIES
 
 
 class SchemaImportError(ValueError):
@@ -117,7 +117,6 @@ def _build_contract(
     locale: dict[str, str] | None,
     fields: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
-    scenario_fields = {field_name: {"strategy": _scenario_strategy(field)} for field_name, field in fields.items()}
     return {
         "schemaVersion": "1.0",
         "id": contract_id,
@@ -127,14 +126,11 @@ def _build_contract(
         },
         "locale": locale or {"language": "en"},
         "fields": fields,
-        "scenarios": [
-            {
-                "id": "valid_payload",
-                "kind": "positive",
-                "description": "All imported fields contain valid values.",
-                "fields": scenario_fields,
-            }
-        ],
+        "scenarios": draft_scenarios(
+            fields,
+            positive_id="valid_payload",
+            positive_description="All imported fields contain valid values.",
+        ),
         "generation": {
             "deterministic": True,
             "defaultSeed": f"{contract_id}-suite",
@@ -240,18 +236,20 @@ def _infer_types(name: str, schema: dict[str, Any]) -> tuple[str, str, float, st
         return data_type, "boolean", 0.78, "schema:type=boolean"
     if schema_format == "email" or _contains(text, "email", "e mail"):
         return "string", "email", 0.95, "schema:email"
-    if _contains(text, "phone", "mobile", "telephone", "cell"):
+    if _contains(text, "phone", "mobile", "telephone", "cell", "tel", "mobile number"):
         return "string", "phone_number", 0.9, "schema:name:phone"
-    if _contains(text, "password", "passcode"):
+    if _contains(text, "confirm password", "password confirmation", "repeat password", "password", "passcode"):
         return "string", "password", 0.95, "schema:name:password"
     if _contains(text, "first name", "firstname", "given name"):
         return "string", "first_name", 0.88, "schema:name:first_name"
     if _contains(text, "last name", "lastname", "family name", "surname"):
         return "string", "last_name", 0.88, "schema:name:last_name"
-    if _contains(text, "username", "user name", "login"):
+    if _contains(text, "username", "user name", "login", "login id", "user id"):
         return "string", "username", 0.84, "schema:name:username"
-    if text.strip() in {"name", "full name", "fullname"}:
+    if text.strip() in {"name", "full name", "fullname"} or _contains(text, "display name", "contact name"):
         return "string", "full_name", 0.82, "schema:name:full_name"
+    if _contains(text, "birth date", "date of birth", "birthdate", "birthday", "dob"):
+        return "date", "date_of_birth", 0.88, "schema:name:date_of_birth"
     if schema_format == "date":
         business_type = "date_of_birth" if _contains(text, "birth", "date of birth", "dob") else "date"
         return "date", business_type, 0.92, f"schema:format={schema_format}"
@@ -259,21 +257,21 @@ def _infer_types(name: str, schema: dict[str, Any]) -> tuple[str, str, float, st
         return "datetime", "datetime", 0.92, f"schema:format={schema_format}"
     if schema_format == "time":
         return "time", "time", 0.92, f"schema:format={schema_format}"
-    if schema_format == "uuid":
+    if schema_format == "uuid" or _contains(text, "uuid", "guid", "profile id", "customer id", "external id", "identifier"):
         return "string", "uuid", 0.92, f"schema:format={schema_format}"
     if schema_format in {"uri", "uri-reference", "url", "iri", "iri-reference"} or _contains(text, "url", "website", "link"):
         return "string", "url", 0.86, "schema:url"
     if schema_format in {"hostname", "idn-hostname"} or _contains(text, "domain", "hostname"):
         return "string", "domain", 0.86, "schema:domain"
-    if _contains(text, "amount", "price", "cost", "total", "balance", "spend", "spending"):
+    if _contains(text, "amount", "price", "cost", "total", "balance", "spend", "spending", "limit"):
         return data_type if data_type in {"integer", "decimal"} else "decimal", "amount", 0.82, "schema:name:amount"
     if _contains(text, "currency"):
         return "string", "currency", 0.82, "schema:name:currency"
-    if _contains(text, "percent", "percentage"):
+    if _contains(text, "percent", "percentage", "rate"):
         return data_type if data_type in {"integer", "decimal"} else "decimal", "percentage", 0.82, "schema:name:percentage"
-    if _contains(text, "quantity", "count"):
+    if _contains(text, "quantity", "qty", "count", "number of"):
         return "integer" if data_type == "integer" else data_type, "quantity", 0.8, "schema:name:quantity"
-    if _contains(text, "address", "street"):
+    if _contains(text, "address", "address line", "street", "street address"):
         return "string", "address_line", 0.82, "schema:name:address"
     if _contains(text, "city"):
         return "string", "city", 0.82, "schema:name:city"
@@ -297,11 +295,11 @@ def _infer_types(name: str, schema: dict[str, Any]) -> tuple[str, str, float, st
         return "string", "account_number", 0.82, "schema:name:account_number"
     if _contains(text, "credit card", "card number"):
         return "string", "credit_card_number", 0.82, "schema:name:credit_card_number"
-    if _contains(text, "cvv", "cvc"):
+    if _contains(text, "cvv", "cvc", "card security code"):
         return "string", "cvv", 0.82, "schema:name:cvv"
     if _contains(text, "expiry", "expiration"):
         return "string", "expiry_date", 0.82, "schema:name:expiry_date"
-    if _contains(text, "otp", "one time password"):
+    if _contains(text, "otp", "one time password", "verification code", "auth code"):
         return "string", "otp", 0.82, "schema:name:otp"
 
     if data_type == "integer":
@@ -396,13 +394,6 @@ def _field_label(name: str, schema: dict[str, Any]) -> str:
     if isinstance(title, str) and title.strip():
         return title.strip()
     return _humanize(name)
-
-
-def _scenario_strategy(field: dict[str, Any]) -> str:
-    business_type = str(field["businessType"])
-    if business_type == "enum" and not field.get("constraints", {}).get("values"):
-        return "valid_free_text"
-    return DEFAULT_STRATEGIES.get(business_type, "valid_free_text")
 
 
 def _find_openapi_operation(document: dict[str, Any], selector: str) -> OpenAPIOperation:

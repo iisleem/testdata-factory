@@ -5,9 +5,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from .analyzer import FieldCandidate, infer_field
+from .analyzer import FieldCandidate, draft_scenarios, infer_field
 from .contracts import validate_contract_data
-from .generation import DEFAULT_STRATEGIES
 
 
 class ScannerError(ValueError):
@@ -146,17 +145,11 @@ def build_contract_draft(
         },
         "locale": locale,
         "fields": fields,
-        "scenarios": [
-            {
-                "id": "valid_form",
-                "kind": "positive",
-                "description": "All scanned form fields contain valid values.",
-                "fields": {
-                    name: {"strategy": _strategy_for_field(field)}
-                    for name, field in fields.items()
-                },
-            }
-        ],
+        "scenarios": draft_scenarios(
+            fields,
+            positive_id="valid_form",
+            positive_description="All scanned form fields contain valid values.",
+        ),
         "generation": {
             "deterministic": True,
             "defaultSeed": f"{resolved_contract_id}-scan",
@@ -305,10 +298,6 @@ def _source_name(source: str) -> str:
     if path.name:
         return path.stem
     return source
-
-
-def _strategy_for_field(field: Mapping[str, Any]) -> str:
-    return DEFAULT_STRATEGIES.get(str(field.get("businessType", "")), "valid_free_text")
 
 
 def _validation_result_summary(result: Any) -> str:

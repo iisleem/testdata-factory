@@ -153,6 +153,7 @@ final class LocalGenerator {
             case "valid_email" -> "user" + index + "." + randomInt(field, seed, scope, index, 1000, 9999) + "@example.test";
             case "invalid_email_format" -> "not-an-email";
             case "valid_phone" -> validPhone(field, seed, scope, index);
+            case "invalid_phone_format" -> "not-a-phone";
             case "valid_country_code" -> choice(field, seed, scope, index, COUNTRY_CODES);
             case "valid_address_line" -> validAddressLine(field, seed, scope, index);
             case "valid_city" -> choice(field, seed, scope, index, CITIES);
@@ -161,6 +162,7 @@ final class LocalGenerator {
             case "valid_country" -> choice(field, seed, scope, index, COUNTRIES);
             case "invalid_alpha" -> "abc";
             case "valid_password" -> "Tdf!" + randomInt(field, seed, scope, index, 100000, 999999) + "Pass";
+            case "weak_password" -> "password";
             case "valid_integer" -> validInteger(field, seed, scope, index);
             case "valid_decimal" -> validDecimal(field, seed, scope, index);
             case "valid_enum" -> validEnum(field, seed, scope, index);
