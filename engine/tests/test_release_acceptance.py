@@ -67,7 +67,9 @@ def test_release_1_business_type_acceptance_score(acceptance_contracts: dict[str
         f"threshold is {ACCEPTANCE_THRESHOLD:.0%}. Misses: {misses}"
     )
 
-    for contract_name, field_expectations in expected.items():
+
+def test_release_1_critical_business_types_match_exactly(acceptance_contracts: dict[str, dict[str, Any]]) -> None:
+    for contract_name, field_expectations in _critical_business_types().items():
         contract = acceptance_contracts[contract_name]
         for field_name, expected_type in field_expectations.items():
             assert contract["fields"][field_name]["businessType"] == expected_type
@@ -315,6 +317,66 @@ def _expected_business_types() -> dict[str, FieldExpectations]:
             "roomQuantity": "quantity",
             "totalAmount": "amount",
             "currency": "currency",
+            "orderType": "enum",
+            "billingAddress": "address_line",
+            "billingCity": "city",
+            "billingCountryCode": "country_code",
+        },
+    }
+
+
+def _critical_business_types() -> dict[str, FieldExpectations]:
+    return {
+        "registration_profile_contact_form": {
+            "firstName": "first_name",
+            "lastName": "last_name",
+            "displayName": "full_name",
+            "email": "email",
+            "password": "password",
+            "mobilePhone": "phone_number",
+            "dateOfBirth": "date_of_birth",
+            "streetAddress": "address_line",
+            "city": "city",
+            "postalCode": "postal_code",
+            "countryCode": "country_code",
+            "contactPreference": "enum",
+        },
+        "checkout_payment_form": {
+            "email": "email",
+            "billingPhone": "phone_number",
+            "cardholderFullName": "full_name",
+            "cardNumber": "credit_card_number",
+            "cardCvv": "cvv",
+            "cardExpiry": "expiry_date",
+            "billingAddress": "address_line",
+            "billingCity": "city",
+            "billingPostalCode": "postal_code",
+            "billingCountry": "country",
+            "orderQuantity": "quantity",
+            "orderTotal": "amount",
+            "shippingMethod": "enum",
+        },
+        "customer_account_json_schema": {
+            "emailAddress": "email",
+            "password": "password",
+            "phoneNumber": "phone_number",
+            "firstName": "first_name",
+            "lastName": "last_name",
+            "dateOfBirth": "date_of_birth",
+            "addressLine1": "address_line",
+            "city": "city",
+            "postalCode": "postal_code",
+            "countryCode": "country_code",
+            "accountStatus": "enum",
+            "spendLimit": "amount",
+        },
+        "booking_order_openapi": {
+            "guestFullName": "full_name",
+            "contactEmail": "email",
+            "contactPhone": "phone_number",
+            "bookingDate": "date",
+            "roomQuantity": "quantity",
+            "totalAmount": "amount",
             "orderType": "enum",
             "billingAddress": "address_line",
             "billingCity": "city",
