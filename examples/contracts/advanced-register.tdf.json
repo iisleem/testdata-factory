@@ -1,0 +1,330 @@
+{
+  "schemaVersion": "1.0",
+  "id": "advanced-register",
+  "source": {
+    "type": "manual",
+    "value": "examples/advanced-register"
+  },
+  "locale": {
+    "country": "US",
+    "language": "en"
+  },
+  "fields": {
+    "email": {
+      "selector": "#email",
+      "label": "Email",
+      "dataType": "string",
+      "businessType": "email",
+      "required": true,
+      "constraints": {
+        "format": "email",
+        "maxLength": 120,
+        "unique": true
+      },
+      "inference": {
+        "confidence": 1,
+        "signals": ["manual"]
+      }
+    },
+    "password": {
+      "selector": "#password",
+      "label": "Password",
+      "dataType": "string",
+      "businessType": "password",
+      "required": true,
+      "constraints": {
+        "minLength": 12,
+        "maxLength": 72
+      },
+      "inference": {
+        "confidence": 1,
+        "signals": ["manual"]
+      }
+    },
+    "confirmPassword": {
+      "selector": "#confirm-password",
+      "label": "Confirm password",
+      "dataType": "string",
+      "businessType": "password",
+      "required": true,
+      "constraints": {
+        "minLength": 12,
+        "maxLength": 72
+      },
+      "dependencies": {
+        "matchesField": "password"
+      },
+      "inference": {
+        "confidence": 1,
+        "signals": ["manual", "dependency:matchesField=password"]
+      }
+    },
+    "startDate": {
+      "selector": "#start-date",
+      "label": "Start date",
+      "dataType": "date",
+      "businessType": "date",
+      "required": true,
+      "dependencies": {
+        "rangeStartFor": "endDate"
+      },
+      "inference": {
+        "confidence": 1,
+        "signals": ["manual", "dependency:rangeStartFor=endDate"]
+      }
+    },
+    "endDate": {
+      "selector": "#end-date",
+      "label": "End date",
+      "dataType": "date",
+      "businessType": "date",
+      "required": true,
+      "dependencies": {
+        "rangeEndFor": "startDate"
+      },
+      "inference": {
+        "confidence": 1,
+        "signals": ["manual", "dependency:rangeEndFor=startDate"]
+      }
+    },
+    "minGuests": {
+      "selector": "#min-guests",
+      "label": "Minimum guests",
+      "dataType": "integer",
+      "businessType": "integer",
+      "required": true,
+      "constraints": {
+        "minimum": 1,
+        "maximum": 5
+      },
+      "dependencies": {
+        "minFor": "maxGuests"
+      },
+      "inference": {
+        "confidence": 1,
+        "signals": ["manual", "dependency:minFor=maxGuests"]
+      }
+    },
+    "maxGuests": {
+      "selector": "#max-guests",
+      "label": "Maximum guests",
+      "dataType": "integer",
+      "businessType": "integer",
+      "required": true,
+      "constraints": {
+        "minimum": 1,
+        "maximum": 10
+      },
+      "dependencies": {
+        "maxFor": "minGuests"
+      },
+      "inference": {
+        "confidence": 1,
+        "signals": ["manual", "dependency:maxFor=minGuests"]
+      }
+    },
+    "notes": {
+      "selector": "#notes",
+      "label": "Notes",
+      "dataType": "string",
+      "businessType": "free_text",
+      "required": false,
+      "constraints": {
+        "minLength": 3,
+        "maxLength": 200
+      },
+      "inference": {
+        "confidence": 1,
+        "signals": ["manual"]
+      }
+    },
+    "marketingOptIn": {
+      "selector": "#marketing-opt-in",
+      "label": "Marketing opt-in",
+      "dataType": "boolean",
+      "businessType": "boolean",
+      "required": false,
+      "inference": {
+        "confidence": 1,
+        "signals": ["manual"]
+      }
+    }
+  },
+  "scenarios": [
+    {
+      "id": "valid_advanced_signup",
+      "kind": "positive",
+      "description": "Advanced signup fields contain valid values and cross-field dependencies are satisfied.",
+      "fields": {
+        "email": {
+          "strategy": "valid_email"
+        },
+        "password": {
+          "strategy": "valid_password"
+        },
+        "confirmPassword": {
+          "strategy": "match_field"
+        },
+        "startDate": {
+          "strategy": "valid_date"
+        },
+        "endDate": {
+          "strategy": "range_end_after_start"
+        },
+        "minGuests": {
+          "strategy": "valid_integer"
+        },
+        "maxGuests": {
+          "strategy": "numeric_max_at_or_above_min"
+        },
+        "notes": {
+          "strategy": "valid_free_text"
+        },
+        "marketingOptIn": {
+          "strategy": "valid_boolean"
+        }
+      }
+    },
+    {
+      "id": "xss_payloads",
+      "kind": "security",
+      "description": "Text-like fields contain a common reflected XSS probe.",
+      "fields": {
+        "notes": {
+          "strategy": "xss_payload"
+        }
+      }
+    },
+    {
+      "id": "sql_injection_payloads",
+      "kind": "security",
+      "description": "Text-like fields contain a common SQL injection probe.",
+      "fields": {
+        "notes": {
+          "strategy": "sql_injection_payload"
+        }
+      }
+    },
+    {
+      "id": "null_required_fields",
+      "kind": "negative",
+      "description": "Required fields are explicitly set to null.",
+      "fields": {
+        "email": {
+          "strategy": "null_value"
+        },
+        "password": {
+          "strategy": "null_value"
+        }
+      }
+    },
+    {
+      "id": "empty_string_fields",
+      "kind": "negative",
+      "description": "String-like fields are submitted as empty strings.",
+      "fields": {
+        "notes": {
+          "strategy": "empty_string"
+        }
+      }
+    },
+    {
+      "id": "whitespace_only_fields",
+      "kind": "negative",
+      "description": "String-like fields contain only whitespace.",
+      "fields": {
+        "notes": {
+          "strategy": "whitespace_only"
+        }
+      }
+    },
+    {
+      "id": "over_max_length_fields",
+      "kind": "negative",
+      "description": "String fields are one character over their maximum length.",
+      "fields": {
+        "notes": {
+          "strategy": "over_max_length"
+        }
+      }
+    },
+    {
+      "id": "below_min_length_fields",
+      "kind": "negative",
+      "description": "String fields are one character below their minimum length.",
+      "fields": {
+        "notes": {
+          "strategy": "below_min_length"
+        }
+      }
+    },
+    {
+      "id": "duplicate_unique_fields",
+      "kind": "negative",
+      "description": "Fields marked unique use duplicate values across generated records.",
+      "fields": {
+        "email": {
+          "strategy": "duplicate_value"
+        }
+      }
+    },
+    {
+      "id": "mismatched_confirmation_fields",
+      "kind": "negative",
+      "description": "Confirmation fields intentionally differ from their source fields.",
+      "fields": {
+        "confirmPassword": {
+          "strategy": "mismatch_field"
+        }
+      }
+    },
+    {
+      "id": "invalid_date_ranges",
+      "kind": "negative",
+      "description": "Date range end fields occur before their start fields.",
+      "fields": {
+        "endDate": {
+          "strategy": "date_before_related_field"
+        }
+      }
+    },
+    {
+      "id": "invalid_numeric_ranges",
+      "kind": "negative",
+      "description": "Numeric maximum fields are below their minimum fields.",
+      "fields": {
+        "maxGuests": {
+          "strategy": "numeric_max_below_min"
+        }
+      }
+    },
+    {
+      "id": "boolean_false_boundaries",
+      "kind": "boundary",
+      "description": "Boolean fields use false explicitly.",
+      "fields": {
+        "marketingOptIn": {
+          "strategy": "boolean_false"
+        }
+      }
+    },
+    {
+      "id": "boolean_true_boundaries",
+      "kind": "boundary",
+      "description": "Boolean fields use true explicitly.",
+      "fields": {
+        "marketingOptIn": {
+          "strategy": "boolean_true"
+        }
+      }
+    }
+  ],
+  "generation": {
+    "deterministic": true,
+    "defaultSeed": "advanced-register-suite"
+  },
+  "validation": {
+    "lastValidatedBy": "manual",
+    "status": "valid"
+  }
+}

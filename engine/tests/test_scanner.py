@@ -216,6 +216,13 @@ def test_scanned_contract_drafts_positive_negative_and_boundary_scenarios() -> N
         "invalid_phone_format",
         "weak_password",
         "missing_required_fields",
+        "xss_payloads",
+        "sql_injection_payloads",
+        "null_required_fields",
+        "empty_string_fields",
+        "whitespace_only_fields",
+        "below_min_length_fields",
+        "over_max_length_fields",
         "min_length_boundaries",
         "max_length_boundaries",
         "numeric_minimum_boundaries",
@@ -248,3 +255,112 @@ def test_scanned_contract_drafts_positive_negative_and_boundary_scenarios() -> N
     assert "workEmail" not in missing_record
     assert "mobilePhone" not in missing_record
     assert "password" not in missing_record
+
+
+def test_scanned_contract_drafts_advanced_and_cross_field_scenarios() -> None:
+    controls = controls_from_payload(
+        [
+            {
+                "tag": "input",
+                "inputType": "email",
+                "name": "email",
+                "label": "Email",
+                "required": True,
+                "validationAttributes": {"data-unique": "true"},
+            },
+            {
+                "tag": "input",
+                "inputType": "password",
+                "name": "password",
+                "label": "Password",
+                "required": True,
+                "validationAttributes": {"minlength": "12", "maxlength": "72"},
+            },
+            {
+                "tag": "input",
+                "inputType": "password",
+                "name": "confirmPassword",
+                "label": "Confirm password",
+                "required": True,
+                "validationAttributes": {"minlength": "12", "maxlength": "72"},
+            },
+            {
+                "tag": "input",
+                "inputType": "date",
+                "name": "startDate",
+                "label": "Start date",
+                "required": True,
+            },
+            {
+                "tag": "input",
+                "inputType": "date",
+                "name": "endDate",
+                "label": "End date",
+                "required": True,
+            },
+            {
+                "tag": "input",
+                "inputType": "number",
+                "name": "minGuests",
+                "label": "Minimum guests",
+                "validationAttributes": {"min": "1", "max": "5"},
+            },
+            {
+                "tag": "input",
+                "inputType": "number",
+                "name": "maxGuests",
+                "label": "Maximum guests",
+                "validationAttributes": {"min": "1", "max": "10"},
+            },
+            {
+                "tag": "textarea",
+                "inputType": "textarea",
+                "name": "notes",
+                "label": "Notes",
+                "validationAttributes": {"minlength": "3", "maxlength": "200"},
+            },
+            {
+                "tag": "input",
+                "inputType": "checkbox",
+                "name": "marketingOptIn",
+                "label": "Marketing opt-in",
+            },
+        ]
+    )
+
+    draft = build_contract_draft(controls, source="https://example.test/advanced-signup")
+
+    validation = validate_contract_data(draft)
+    assert validation.is_valid, validation.to_dict()
+    assert draft["fields"]["email"]["constraints"]["unique"] is True
+    assert draft["fields"]["confirmPassword"]["dependencies"] == {"matchesField": "password"}
+    assert draft["fields"]["endDate"]["dependencies"] == {"rangeEndFor": "startDate"}
+    assert draft["fields"]["maxGuests"]["dependencies"] == {"maxFor": "minGuests"}
+
+    scenarios = {scenario["id"]: scenario for scenario in draft["scenarios"]}
+    assert {
+        "xss_payloads",
+        "sql_injection_payloads",
+        "duplicate_unique_fields",
+        "boolean_false_boundaries",
+        "boolean_true_boundaries",
+        "mismatched_confirmation_fields",
+        "invalid_date_ranges",
+        "invalid_numeric_ranges",
+    } <= scenarios.keys()
+
+    happy_record = generate_records(draft, "valid_form", seed="scan-advanced")[0]
+    mismatch_record = generate_records(draft, "mismatched_confirmation_fields", seed="scan-advanced")[0]
+    invalid_date_record = generate_records(draft, "invalid_date_ranges", seed="scan-advanced")[0]
+    invalid_numeric_record = generate_records(draft, "invalid_numeric_ranges", seed="scan-advanced")[0]
+    duplicate_records = generate_records(draft, "duplicate_unique_fields", count=2, seed="scan-advanced")
+    xss_record = generate_records(draft, "xss_payloads", seed="scan-advanced")[0]
+
+    assert happy_record["confirmPassword"] == happy_record["password"]
+    assert happy_record["endDate"] > happy_record["startDate"]
+    assert happy_record["maxGuests"] >= happy_record["minGuests"]
+    assert mismatch_record["confirmPassword"] != mismatch_record["password"]
+    assert invalid_date_record["endDate"] < invalid_date_record["startDate"]
+    assert invalid_numeric_record["maxGuests"] < invalid_numeric_record["minGuests"]
+    assert duplicate_records[0]["email"] == duplicate_records[1]["email"]
+    assert xss_record["notes"] == "<script>alert('tdf')</script>"

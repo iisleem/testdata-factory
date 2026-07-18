@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
@@ -16,6 +17,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -125,6 +127,62 @@ class TestDataFactoryClientTest {
     }
 
     @Test
+    void appliesSecurityRobustnessBoundaryAndDuplicateStrategies() {
+        ContractDocument contract = new ContractDocument(advancedGenerationContract(), "java-sdk-advanced");
+
+        assertEquals("<script>alert('tdf')</script>", contract.scenario("xss_payloads").one().get("notes"));
+        assertEquals("admin' OR '1'='1", contract.scenario("sql_injection_payloads").one().get("notes"));
+
+        Map<String, Object> nullRecord = contract.scenario("null_required_fields").one();
+        assertTrue(nullRecord.containsKey("email"));
+        assertNull(nullRecord.get("email"));
+
+        assertEquals("", contract.scenario("empty_string_fields").one().get("notes"));
+        assertEquals("", contract.scenario("empty_dependent_date_field").one().get("endDate"));
+        assertEquals("   ", contract.scenario("whitespace_only_fields").one().get("notes"));
+        assertEquals(2, contract.scenario("below_min_length_fields").one().get("notes").toString().length());
+        assertEquals(11, contract.scenario("over_max_length_fields").one().get("notes").toString().length());
+        assertEquals(false, contract.scenario("boolean_false_boundaries").one().get("marketingOptIn"));
+        assertEquals(true, contract.scenario("boolean_true_boundaries").one().get("marketingOptIn"));
+
+        List<Map<String, Object>> duplicateRecords = contract.scenario("duplicate_unique_fields").count(2);
+        assertEquals("duplicate@example.test", duplicateRecords.get(0).get("email"));
+        assertEquals(duplicateRecords.get(0).get("email"), duplicateRecords.get(1).get("email"));
+    }
+
+    @Test
+    void appliesCrossFieldDependenciesForValidAndInvalidRecords() {
+        ContractDocument contract = new ContractDocument(advancedGenerationContract(), "java-sdk-advanced");
+
+        Map<String, Object> happyRecord = contract.scenario("valid_advanced").one();
+        Map<String, Object> explicitValidRecord = contract.scenario("explicit_valid_relationships").one();
+        Map<String, Object> rangeEndStrategyRecord = contract.scenario("range_end_after_start_relationship").one();
+        Map<String, Object> normalOverrideRecord = contract.scenario("normal_strategy_confirmation_matches").one();
+        Map<String, Object> mismatchRecord = contract.scenario("mismatched_confirmation_fields").one();
+        Map<String, Object> invalidDateRecord = contract.scenario("invalid_date_ranges").one();
+        Map<String, Object> invalidNumericRecord = contract.scenario("invalid_numeric_ranges").one();
+
+        assertEquals(happyRecord.get("password"), happyRecord.get("confirmPassword"));
+        assertTrue(LocalDate.parse(happyRecord.get("endDate").toString())
+            .isAfter(LocalDate.parse(happyRecord.get("startDate").toString())));
+        assertTrue((Integer) happyRecord.get("maxGuests") >= (Integer) happyRecord.get("minGuests"));
+
+        assertEquals(explicitValidRecord.get("password"), explicitValidRecord.get("confirmPassword"));
+        assertTrue(LocalDate.parse(explicitValidRecord.get("endDate").toString())
+            .isAfter(LocalDate.parse(explicitValidRecord.get("startDate").toString())));
+        assertTrue((Integer) explicitValidRecord.get("maxGuests") >= (Integer) explicitValidRecord.get("minGuests"));
+
+        assertTrue(LocalDate.parse(rangeEndStrategyRecord.get("endDate").toString())
+            .isAfter(LocalDate.parse(rangeEndStrategyRecord.get("startDate").toString())));
+        assertEquals(normalOverrideRecord.get("password"), normalOverrideRecord.get("confirmPassword"));
+        assertNotEquals("password", normalOverrideRecord.get("confirmPassword"));
+        assertNotEquals(mismatchRecord.get("password"), mismatchRecord.get("confirmPassword"));
+        assertTrue(LocalDate.parse(invalidDateRecord.get("endDate").toString())
+            .isBefore(LocalDate.parse(invalidDateRecord.get("startDate").toString())));
+        assertTrue((Integer) invalidNumericRecord.get("maxGuests") < (Integer) invalidNumericRecord.get("minGuests"));
+    }
+
+    @Test
     void unknownScenarioFailsClearly() {
         ScenarioRequest scenario = TestDataFactory.local().contract(CONTRACT).scenario("missing_scenario");
 
@@ -214,6 +272,215 @@ class TestDataFactoryClientTest {
                     )
                 ),
                 "generation", Map.of("deterministic", true, "defaultSeed", "generated-import-suite"),
+                "validation", Map.of("status", "valid")
+            )
+        );
+    }
+
+    private static JsonNode advancedGenerationContract() {
+        Map<String, Object> fields = new LinkedHashMap<>();
+        fields.put(
+            "email",
+            Map.of(
+                "dataType", "string",
+                "businessType", "email",
+                "required", true,
+                "constraints", Map.of("format", "email", "unique", true)
+            )
+        );
+        fields.put(
+            "password",
+            Map.of(
+                "dataType", "string",
+                "businessType", "password",
+                "required", true,
+                "constraints", Map.of("minLength", 12, "maxLength", 72)
+            )
+        );
+        fields.put(
+            "confirmPassword",
+            Map.of(
+                "dataType", "string",
+                "businessType", "password",
+                "required", true,
+                "constraints", Map.of("minLength", 12, "maxLength", 72),
+                "dependencies", Map.of("matchesField", "password")
+            )
+        );
+        fields.put(
+            "startDate",
+            Map.of(
+                "dataType", "date",
+                "businessType", "date",
+                "required", true,
+                "dependencies", Map.of("rangeStartFor", "endDate")
+            )
+        );
+        fields.put(
+            "endDate",
+            Map.of(
+                "dataType", "date",
+                "businessType", "date",
+                "required", true,
+                "dependencies", Map.of("rangeEndFor", "startDate")
+            )
+        );
+        fields.put(
+            "minGuests",
+            Map.of(
+                "dataType", "integer",
+                "businessType", "integer",
+                "required", true,
+                "constraints", Map.of("minimum", 1, "maximum", 5),
+                "dependencies", Map.of("minFor", "maxGuests")
+            )
+        );
+        fields.put(
+            "maxGuests",
+            Map.of(
+                "dataType", "integer",
+                "businessType", "integer",
+                "required", true,
+                "constraints", Map.of("minimum", 1, "maximum", 10),
+                "dependencies", Map.of("maxFor", "minGuests")
+            )
+        );
+        fields.put(
+            "notes",
+            Map.of(
+                "dataType", "string",
+                "businessType", "free_text",
+                "required", false,
+                "constraints", Map.of("minLength", 3, "maxLength", 10)
+            )
+        );
+        fields.put(
+            "marketingOptIn",
+            Map.of("dataType", "boolean", "businessType", "boolean", "required", false)
+        );
+
+        return OBJECT_MAPPER.valueToTree(
+            Map.of(
+                "schemaVersion", "1.0",
+                "id", "advanced-generation",
+                "source", Map.of("type", "manual", "value", "advanced-generation"),
+                "locale", Map.of("language", "en", "country", "US"),
+                "fields", fields,
+                "scenarios", List.of(
+                    Map.of(
+                        "id", "valid_advanced",
+                        "kind", "positive",
+                        "description", "Valid advanced fields.",
+                        "fields", Map.of()
+                    ),
+                    Map.of(
+                        "id", "explicit_valid_relationships",
+                        "kind", "positive",
+                        "description", "Explicit relational strategies.",
+                        "fields", Map.of(
+                            "confirmPassword", Map.of("strategy", "match_field"),
+                            "endDate", Map.of("strategy", "date_after_related_field"),
+                            "maxGuests", Map.of("strategy", "numeric_max_at_or_above_min")
+                        )
+                    ),
+                    Map.of(
+                        "id", "range_end_after_start_relationship",
+                        "kind", "positive",
+                        "description", "Range end strategy keeps end date after start date.",
+                        "fields", Map.of("endDate", Map.of("strategy", "range_end_after_start"))
+                    ),
+                    Map.of(
+                        "id", "normal_strategy_confirmation_matches",
+                        "kind", "positive",
+                        "description", "Generated dependent fields honor dependencies after normal strategy generation.",
+                        "fields", Map.of("confirmPassword", Map.of("strategy", "weak_password"))
+                    ),
+                    Map.of(
+                        "id", "xss_payloads",
+                        "kind", "security",
+                        "description", "XSS probe.",
+                        "fields", Map.of("notes", Map.of("strategy", "xss_payload"))
+                    ),
+                    Map.of(
+                        "id", "sql_injection_payloads",
+                        "kind", "security",
+                        "description", "SQL injection probe.",
+                        "fields", Map.of("notes", Map.of("strategy", "sql_injection_payload"))
+                    ),
+                    Map.of(
+                        "id", "null_required_fields",
+                        "kind", "negative",
+                        "description", "Null required field.",
+                        "fields", Map.of("email", Map.of("strategy", "null_value"))
+                    ),
+                    Map.of(
+                        "id", "empty_string_fields",
+                        "kind", "negative",
+                        "description", "Empty string field.",
+                        "fields", Map.of("notes", Map.of("strategy", "empty_string"))
+                    ),
+                    Map.of(
+                        "id", "empty_dependent_date_field",
+                        "kind", "negative",
+                        "description", "Empty string on a dependent date field.",
+                        "fields", Map.of("endDate", Map.of("strategy", "empty_string"))
+                    ),
+                    Map.of(
+                        "id", "whitespace_only_fields",
+                        "kind", "negative",
+                        "description", "Whitespace-only field.",
+                        "fields", Map.of("notes", Map.of("strategy", "whitespace_only"))
+                    ),
+                    Map.of(
+                        "id", "below_min_length_fields",
+                        "kind", "negative",
+                        "description", "Below minimum length.",
+                        "fields", Map.of("notes", Map.of("strategy", "below_min_length"))
+                    ),
+                    Map.of(
+                        "id", "over_max_length_fields",
+                        "kind", "negative",
+                        "description", "Over maximum length.",
+                        "fields", Map.of("notes", Map.of("strategy", "over_max_length"))
+                    ),
+                    Map.of(
+                        "id", "duplicate_unique_fields",
+                        "kind", "negative",
+                        "description", "Duplicate unique field.",
+                        "fields", Map.of("email", Map.of("strategy", "duplicate_value"))
+                    ),
+                    Map.of(
+                        "id", "boolean_false_boundaries",
+                        "kind", "boundary",
+                        "description", "False boolean.",
+                        "fields", Map.of("marketingOptIn", Map.of("strategy", "boolean_false"))
+                    ),
+                    Map.of(
+                        "id", "boolean_true_boundaries",
+                        "kind", "boundary",
+                        "description", "True boolean.",
+                        "fields", Map.of("marketingOptIn", Map.of("strategy", "boolean_true"))
+                    ),
+                    Map.of(
+                        "id", "mismatched_confirmation_fields",
+                        "kind", "negative",
+                        "description", "Password confirmation mismatch.",
+                        "fields", Map.of("confirmPassword", Map.of("strategy", "mismatch_field"))
+                    ),
+                    Map.of(
+                        "id", "invalid_date_ranges",
+                        "kind", "negative",
+                        "description", "Date range is reversed.",
+                        "fields", Map.of("endDate", Map.of("strategy", "date_before_related_field"))
+                    ),
+                    Map.of(
+                        "id", "invalid_numeric_ranges",
+                        "kind", "negative",
+                        "description", "Maximum is below minimum.",
+                        "fields", Map.of("maxGuests", Map.of("strategy", "numeric_max_below_min"))
+                    )
+                ),
+                "generation", Map.of("deterministic", true, "defaultSeed", "advanced-generation-suite"),
                 "validation", Map.of("status", "valid")
             )
         );

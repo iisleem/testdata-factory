@@ -17,7 +17,7 @@ This guide is for contributors working from the source repository.
 
 ## Package Metadata
 
-The current release version is `0.1.0`.
+The current release version is `1.0.0`.
 
 - Python engine and CLI: `testdata-factory-engine`
 - Java SDK: `io.github.iisleem.testdatafactory:testdata-factory`

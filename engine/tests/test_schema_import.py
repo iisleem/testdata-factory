@@ -56,12 +56,21 @@ def test_imports_json_schema_object_properties() -> None:
         "valid_payload",
         "invalid_email_format",
         "missing_required_fields",
+        "xss_payloads",
+        "sql_injection_payloads",
+        "null_required_fields",
+        "empty_string_fields",
+        "whitespace_only_fields",
+        "below_min_length_fields",
+        "over_max_length_fields",
         "min_length_boundaries",
         "max_length_boundaries",
         "numeric_minimum_boundaries",
         "numeric_maximum_boundaries",
         "enum_value_boundaries",
         "date_boundaries",
+        "boolean_false_boundaries",
+        "boolean_true_boundaries",
     ]
     assert scenarios["valid_payload"]["fields"]["email"]["strategy"] == "valid_email"
     assert scenarios["valid_payload"]["fields"]["plan"]["strategy"] == "valid_enum"
@@ -120,11 +129,20 @@ def test_imports_openapi_selected_operation_request_schema() -> None:
         "invalid_email_format",
         "weak_password",
         "missing_required_fields",
+        "xss_payloads",
+        "sql_injection_payloads",
+        "null_required_fields",
+        "empty_string_fields",
+        "whitespace_only_fields",
+        "below_min_length_fields",
+        "over_max_length_fields",
         "min_length_boundaries",
         "max_length_boundaries",
         "numeric_minimum_boundaries",
         "numeric_maximum_boundaries",
         "enum_value_boundaries",
+        "boolean_false_boundaries",
+        "boolean_true_boundaries",
     ]
     assert scenarios["valid_payload"]["fields"]["password"]["strategy"] == "valid_password"
     assert scenarios["weak_password"]["fields"] == {"password": {"strategy": "weak_password"}}
@@ -156,6 +174,74 @@ def test_imports_openapi_operation_by_method_and_path() -> None:
     assert set(contract["fields"]) == {"displayName"}
 
 
+def test_json_schema_import_drafts_cross_field_and_advanced_records() -> None:
+    contract = import_json_schema_contract(_cross_field_schema(), contract_id="advanced-json-schema")
+
+    validation = validate_contract_data(contract)
+    assert validation.is_valid, validation.to_dict()
+    fields = contract["fields"]
+    assert fields["email"]["constraints"]["unique"] is True
+    assert fields["confirmPassword"]["dependencies"] == {"matchesField": "password"}
+    assert fields["startDate"]["dependencies"] == {"rangeStartFor": "endDate"}
+    assert fields["endDate"]["dependencies"] == {"rangeEndFor": "startDate"}
+    assert fields["minGuests"]["dependencies"] == {"minFor": "maxGuests"}
+    assert fields["maxGuests"]["dependencies"] == {"maxFor": "minGuests"}
+
+    scenarios = {scenario["id"]: scenario for scenario in contract["scenarios"]}
+    assert {
+        "xss_payloads",
+        "sql_injection_payloads",
+        "duplicate_unique_fields",
+        "mismatched_confirmation_fields",
+        "invalid_date_ranges",
+        "invalid_numeric_ranges",
+    } <= scenarios.keys()
+
+    happy_record = generate_records(contract, "valid_payload", seed="schema-cross")[0]
+    mismatch_record = generate_records(contract, "mismatched_confirmation_fields", seed="schema-cross")[0]
+    invalid_date_record = generate_records(contract, "invalid_date_ranges", seed="schema-cross")[0]
+    invalid_numeric_record = generate_records(contract, "invalid_numeric_ranges", seed="schema-cross")[0]
+    duplicate_records = generate_records(contract, "duplicate_unique_fields", count=2, seed="schema-cross")
+
+    assert happy_record["confirmPassword"] == happy_record["password"]
+    assert happy_record["endDate"] > happy_record["startDate"]
+    assert happy_record["maxGuests"] >= happy_record["minGuests"]
+    assert mismatch_record["confirmPassword"] != mismatch_record["password"]
+    assert invalid_date_record["endDate"] < invalid_date_record["startDate"]
+    assert invalid_numeric_record["maxGuests"] < invalid_numeric_record["minGuests"]
+    assert duplicate_records[0]["email"] == duplicate_records[1]["email"]
+
+
+def test_openapi_import_drafts_cross_field_and_advanced_records() -> None:
+    contract = import_openapi_request_contract(_cross_field_openapi(), "createAdvancedBooking")
+
+    validation = validate_contract_data(contract)
+    assert validation.is_valid, validation.to_dict()
+    scenarios = {scenario["id"]: scenario for scenario in contract["scenarios"]}
+    assert contract["fields"]["confirmPassword"]["dependencies"] == {"matchesField": "password"}
+    assert contract["fields"]["endDate"]["dependencies"] == {"rangeEndFor": "startDate"}
+    assert contract["fields"]["maxGuests"]["dependencies"] == {"maxFor": "minGuests"}
+    assert {
+        "mismatched_confirmation_fields",
+        "valid_date_ranges",
+        "invalid_date_ranges",
+        "valid_numeric_ranges",
+        "invalid_numeric_ranges",
+    } <= scenarios.keys()
+
+    happy_record = generate_records(contract, "valid_payload", seed="openapi-cross")[0]
+    mismatch_record = generate_records(contract, "mismatched_confirmation_fields", seed="openapi-cross")[0]
+    invalid_date_record = generate_records(contract, "invalid_date_ranges", seed="openapi-cross")[0]
+    invalid_numeric_record = generate_records(contract, "invalid_numeric_ranges", seed="openapi-cross")[0]
+
+    assert happy_record["confirmPassword"] == happy_record["password"]
+    assert happy_record["endDate"] > happy_record["startDate"]
+    assert happy_record["maxGuests"] >= happy_record["minGuests"]
+    assert mismatch_record["confirmPassword"] != mismatch_record["password"]
+    assert invalid_date_record["endDate"] < invalid_date_record["startDate"]
+    assert invalid_numeric_record["maxGuests"] < invalid_numeric_record["minGuests"]
+
+
 def test_import_rejects_schema_without_object_properties() -> None:
     with pytest.raises(SchemaImportError, match="object schema with properties"):
         import_json_schema_contract({"type": "string"}, contract_id="invalid")
@@ -176,3 +262,44 @@ def test_import_rejects_invalid_validation_result(monkeypatch: pytest.MonkeyPatc
 
     with pytest.raises(SchemaImportError, match="Imported contract is invalid: fields.email"):
         import_json_schema_contract(_load_fixture("customer.schema.json"), contract_id="customer-signup")
+
+
+def _cross_field_schema() -> dict:
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "Advanced booking",
+        "type": "object",
+        "required": ["email", "password", "confirmPassword", "startDate", "endDate", "minGuests", "maxGuests"],
+        "properties": {
+            "email": {"type": "string", "format": "email", "x-unique": True},
+            "password": {"type": "string", "minLength": 12, "maxLength": 72},
+            "confirmPassword": {"type": "string", "minLength": 12, "maxLength": 72},
+            "startDate": {"type": "string", "format": "date"},
+            "endDate": {"type": "string", "format": "date"},
+            "minGuests": {"type": "integer", "minimum": 1, "maximum": 5},
+            "maxGuests": {"type": "integer", "minimum": 1, "maximum": 10},
+            "notes": {"type": "string", "minLength": 3, "maxLength": 200},
+        },
+    }
+
+
+def _cross_field_openapi() -> dict:
+    return {
+        "openapi": "3.1.0",
+        "info": {"title": "Advanced booking API", "version": "1.0.0"},
+        "paths": {
+            "/advanced-bookings": {
+                "post": {
+                    "operationId": "createAdvancedBooking",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": _cross_field_schema(),
+                            }
+                        },
+                    },
+                }
+            }
+        },
+    }

@@ -57,6 +57,26 @@ DEFAULT_STRATEGIES = {
     "free_text": "valid_free_text",
 }
 
+RELATIONAL_STRATEGIES = {
+    "match_field",
+    "mismatch_field",
+    "range_end_after_start",
+    "date_after_related_field",
+    "date_before_related_field",
+    "numeric_max_at_or_above_min",
+    "numeric_max_below_min",
+}
+INDEPENDENT_VALUE_STRATEGIES = {
+    "xss_payload",
+    "sql_injection_payload",
+    "null_value",
+    "empty_string",
+    "whitespace_only",
+    "over_max_length",
+    "below_min_length",
+    "duplicate_value",
+}
+
 
 def generate_records(
     contract: Contract | dict[str, Any],
@@ -94,8 +114,12 @@ def _generate_record(
         if strategy_name in {"missing", "missing_required"}:
             continue
 
+        if strategy_name in RELATIONAL_STRATEGIES:
+            strategy_name = _default_strategy(field)
+
         record[field_name] = _run_strategy(field, strategy_name, seed, scenario_id, index, field_name)
 
+    _apply_dependencies(record, contract, scenario)
     return record
 
 
@@ -268,6 +292,14 @@ def _valid_boolean(field: Field, seed: str, scope: str, index: int) -> bool:
     return bool(_rng(field, seed, scope, index).randint(0, 1))
 
 
+def _boolean_false(field: Field, seed: str, scope: str, index: int) -> bool:
+    return False
+
+
+def _boolean_true(field: Field, seed: str, scope: str, index: int) -> bool:
+    return True
+
+
 def _valid_currency(field: Field, seed: str, scope: str, index: int) -> str:
     return _bounded_text(field, _choice(field, seed, scope, index, ["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "JOD"]))
 
@@ -336,8 +368,204 @@ def _valid_free_text(field: Field, seed: str, scope: str, index: int) -> str:
     return _bounded_text(field, f"Generated test note {index + 1}")
 
 
+def _xss_payload(field: Field, seed: str, scope: str, index: int) -> str:
+    return "<script>alert('tdf')</script>"
+
+
+def _sql_injection_payload(field: Field, seed: str, scope: str, index: int) -> str:
+    return "admin' OR '1'='1"
+
+
+def _null_value(field: Field, seed: str, scope: str, index: int) -> None:
+    return None
+
+
+def _empty_string(field: Field, seed: str, scope: str, index: int) -> str:
+    return ""
+
+
+def _whitespace_only(field: Field, seed: str, scope: str, index: int) -> str:
+    return "   "
+
+
+def _over_max_length(field: Field, seed: str, scope: str, index: int) -> str:
+    maximum = field.get("constraints", {}).get("maxLength")
+    length = maximum + 1 if isinstance(maximum, int) and maximum >= 0 else 256
+    return "X" * length
+
+
+def _below_min_length(field: Field, seed: str, scope: str, index: int) -> str:
+    minimum = field.get("constraints", {}).get("minLength")
+    length = minimum - 1 if isinstance(minimum, int) and minimum > 0 else 0
+    return "A" * length
+
+
+def _duplicate_value(field: Field, seed: str, scope: str, index: int) -> Any:
+    business_type = field.get("businessType")
+    if business_type == "email":
+        return _bounded_email(field, "duplicate@example.test")
+    if business_type == "username":
+        return _bounded_text(field, "duplicate_user")
+    if business_type == "uuid":
+        return "00000000-0000-4000-8000-000000000000"
+    if business_type in {"integer", "quantity"}:
+        return _integer_minimum(field)
+    if business_type in {"decimal", "amount", "percentage"}:
+        return float(_numeric_minimum(field))
+    if business_type in {"date", "date_of_birth"}:
+        return "2026-01-01"
+    return _bounded_text(field, "duplicate")
+
+
 def _choice(field: Field, seed: str, scope: str, index: int, values: list[Any]) -> Any:
     return values[_rng(field, seed, scope, index).randrange(len(values))]
+
+
+def _apply_dependencies(record: dict[str, Any], contract: dict[str, Any], scenario: dict[str, Any]) -> None:
+    scenario_fields = scenario.get("fields", {})
+    if not isinstance(scenario_fields, dict):
+        scenario_fields = {}
+
+    for field_name, field in contract["fields"].items():
+        if field_name not in record:
+            continue
+
+        override = scenario_fields.get(field_name, {})
+        if isinstance(override, dict) and "value" in override:
+            continue
+
+        dependencies = field.get("dependencies", {})
+        if not isinstance(dependencies, dict):
+            continue
+
+        strategy_name = str(override.get("strategy", "")) if isinstance(override, dict) else ""
+        if strategy_name in INDEPENDENT_VALUE_STRATEGIES:
+            continue
+
+        matches_field = dependencies.get("matchesField")
+        if isinstance(matches_field, str) and matches_field in record:
+            if strategy_name == "mismatch_field":
+                record[field_name] = _different_value(record[matches_field], field)
+            else:
+                record[field_name] = record[matches_field]
+            continue
+
+        range_start = dependencies.get("rangeEndFor")
+        if isinstance(range_start, str) and range_start in record:
+            if strategy_name == "date_before_related_field":
+                record[field_name] = _relative_temporal_value(record[range_start], field, days=-1)
+            else:
+                record[field_name] = _relative_temporal_value(record[range_start], field, days=7)
+            continue
+
+        numeric_minimum = dependencies.get("maxFor")
+        if isinstance(numeric_minimum, str) and numeric_minimum in record:
+            if strategy_name == "numeric_max_below_min":
+                record[field_name] = _relative_numeric_value(record[numeric_minimum], field, offset=-1)
+            else:
+                record[field_name] = _valid_numeric_max_value(record[numeric_minimum], field)
+
+
+def _different_value(value: Any, field: Field) -> Any:
+    if value is None:
+        return _bounded_text(field, "mismatch")
+    if isinstance(value, bool):
+        return not value
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value + 1
+    if isinstance(value, float):
+        return round(value + 1, 2)
+
+    original = str(value)
+    candidate = _bounded_text(field, f"{original}_mismatch", filler="X")
+    if candidate != original:
+        return candidate
+    if not original:
+        return _bounded_text(field, "mismatch")
+    replacement = "X" if original[-1] != "X" else "Y"
+    return f"{original[:-1]}{replacement}"
+
+
+def _relative_temporal_value(value: Any, field: Field, *, days: int) -> str:
+    parsed = _parse_temporal_value(value) or datetime(2026, 1, 1, 9, 0, 0)
+    shifted = parsed + timedelta(days=days)
+    if field.get("dataType") == "datetime":
+        return f"{shifted.isoformat()}Z"
+    return shifted.date().isoformat()
+
+
+def _parse_temporal_value(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+
+    normalized = value.removesuffix("Z")
+    try:
+        if "T" in normalized:
+            return datetime.fromisoformat(normalized)
+        return datetime.combine(date.fromisoformat(normalized), time(hour=9))
+    except ValueError:
+        return None
+
+
+def _valid_numeric_max_value(value: Any, field: Field) -> int | float:
+    base = _number_value(value)
+    if base is None:
+        base = _numeric_minimum(field)
+
+    step = _numeric_step(field)
+    candidate = base + step
+    constraints = field.get("constraints", {})
+    maximum = constraints.get("maximum")
+    if isinstance(maximum, (int, float)) and not isinstance(maximum, bool) and candidate > maximum >= base:
+        candidate = maximum
+    elif isinstance(maximum, (int, float)) and not isinstance(maximum, bool) and maximum < base:
+        candidate = base
+
+    minimum = constraints.get("minimum")
+    if isinstance(minimum, (int, float)) and not isinstance(minimum, bool) and candidate < minimum:
+        candidate = minimum
+
+    return _coerce_number_for_field(candidate, field)
+
+
+def _relative_numeric_value(value: Any, field: Field, *, offset: int | float) -> int | float:
+    base = _number_value(value)
+    if base is None:
+        base = _numeric_minimum(field)
+    return _coerce_number_for_field(base + (offset * _numeric_step(field)), field)
+
+
+def _number_value(value: Any) -> int | float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return value
+    return None
+
+
+def _numeric_step(field: Field) -> int | float:
+    constraints = field.get("constraints", {})
+    step = constraints.get("step") or constraints.get("multipleOf")
+    if isinstance(step, (int, float)) and not isinstance(step, bool) and step > 0:
+        return step
+    return 1
+
+
+def _integer_minimum(field: Field) -> int:
+    return int(_numeric_minimum(field))
+
+
+def _numeric_minimum(field: Field) -> int | float:
+    minimum = field.get("constraints", {}).get("minimum")
+    if isinstance(minimum, (int, float)) and not isinstance(minimum, bool):
+        return minimum
+    return 1
+
+
+def _coerce_number_for_field(value: int | float, field: Field) -> int | float:
+    if field.get("dataType") == "integer":
+        return int(value)
+    return round(float(value), 2)
 
 
 def _bounded_text(field: Field, value: str, *, filler: str = "x") -> str:
@@ -440,6 +668,8 @@ STRATEGIES: dict[str, Strategy] = {
     "valid_time": _valid_time,
     "valid_datetime": _valid_datetime,
     "valid_boolean": _valid_boolean,
+    "boolean_false": _boolean_false,
+    "boolean_true": _boolean_true,
     "valid_currency": _valid_currency,
     "valid_url": _valid_url,
     "valid_domain": _valid_domain,
@@ -454,4 +684,12 @@ STRATEGIES: dict[str, Strategy] = {
     "valid_expiry_date": _valid_expiry_date,
     "valid_otp": _valid_otp,
     "valid_free_text": _valid_free_text,
+    "xss_payload": _xss_payload,
+    "sql_injection_payload": _sql_injection_payload,
+    "null_value": _null_value,
+    "empty_string": _empty_string,
+    "whitespace_only": _whitespace_only,
+    "over_max_length": _over_max_length,
+    "below_min_length": _below_min_length,
+    "duplicate_value": _duplicate_value,
 }

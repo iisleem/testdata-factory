@@ -98,3 +98,16 @@ def test_load_contract_rejects_unknown_scenario_field_reference(tmp_path: Path) 
 
     assert exc.value.result is not None
     assert exc.value.result.status == "invalid"
+
+
+def test_unknown_dependency_field_reference_returns_error() -> None:
+    contract = deepcopy(VALID_CONTRACT)
+    contract["fields"]["password"]["dependencies"] = {"matchesField": "passwordConfirmation"}
+
+    result = validate_contract_data(contract)
+
+    assert result.status == "invalid"
+    assert ("error", "fields.password.dependencies.matchesField") in [
+        (finding.severity, finding.field) for finding in result.findings
+    ]
+    assert any("unknown dependency field 'passwordConfirmation'" in finding.message for finding in result.findings)

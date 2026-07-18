@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from .analyzer import FieldCandidate, draft_scenarios, infer_field
+from .analyzer import FieldCandidate, annotate_cross_field_dependencies, draft_scenarios, infer_field
 from .contracts import validate_contract_data
 
 
@@ -130,6 +130,7 @@ def build_contract_draft(
 
     if not fields:
         raise ScannerError("No supported form controls were found")
+    fields = annotate_cross_field_dependencies(fields)
 
     resolved_contract_id = _contract_id(contract_id or _source_name(source))
     locale = {"language": locale_language}
@@ -217,6 +218,8 @@ def _constraints_from_validation(input_type: str, attrs: Mapping[str, str]) -> d
         constraints["step"] = step if step is not None else attrs["step"]
     if attrs.get("multiple") == "true":
         constraints["multiple"] = True
+    if any(_parse_bool(value) for value in (attrs.get("unique"), attrs.get("data-unique"))):
+        constraints["unique"] = True
 
     minimum = _parse_number(attrs.get("min", ""))
     maximum = _parse_number(attrs.get("max", ""))
@@ -330,6 +333,12 @@ def _parse_number(value: str) -> int | float | None:
     return number
 
 
+def _parse_bool(value: str | None) -> bool:
+    if value is None:
+        return False
+    return value.strip().lower() in {"1", "true", "yes"}
+
+
 def _string(value: Any) -> str:
     return str(value).strip() if value is not None else ""
 
@@ -423,7 +432,7 @@ _FORM_CONTROL_SCRIPT = """
 
   const validationAttributesFor = (element) => {
     const attrs = {};
-    for (const name of ['minlength', 'maxlength', 'min', 'max', 'pattern', 'step']) {
+    for (const name of ['minlength', 'maxlength', 'min', 'max', 'pattern', 'step', 'unique', 'data-unique']) {
       if (element.hasAttribute(name)) attrs[name] = element.getAttribute(name);
     }
     if (element.hasAttribute('multiple')) attrs.multiple = 'true';

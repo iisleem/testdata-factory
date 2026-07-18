@@ -15,6 +15,7 @@ export type ContractJson = {
 export type ContractField = {
   businessType: string;
   constraints?: Record<string, unknown>;
+  dependencies?: Record<string, unknown>;
   [key: string]: unknown;
 };
 
@@ -154,6 +155,25 @@ const cities = ["Springfield", "Riverton", "Fairview", "Georgetown", "Franklin"]
 const states = ["CA", "NY", "TX", "WA", "IL", "FL"];
 const countries = ["United States", "Canada", "United Kingdom", "Australia", "Germany", "France", "Jordan"];
 const currencies = ["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "JOD"];
+const relationalStrategies = new Set([
+  "match_field",
+  "mismatch_field",
+  "range_end_after_start",
+  "date_after_related_field",
+  "date_before_related_field",
+  "numeric_max_at_or_above_min",
+  "numeric_max_below_min",
+]);
+const independentValueStrategies = new Set([
+  "xss_payload",
+  "sql_injection_payload",
+  "null_value",
+  "empty_string",
+  "whitespace_only",
+  "over_max_length",
+  "below_min_length",
+  "duplicate_value",
+]);
 const nullByte = Buffer.from([0]);
 const mask64 = (1n << 64n) - 1n;
 
@@ -190,14 +210,19 @@ function generateRecord(
       continue;
     }
 
-    const strategy = override.strategy ?? defaultStrategy(field);
+    let strategy = override.strategy ?? defaultStrategy(field);
     if (strategy === "missing" || strategy === "missing_required") {
       continue;
+    }
+
+    if (relationalStrategies.has(strategy)) {
+      strategy = defaultStrategy(field);
     }
 
     record[fieldName] = runStrategy(field, strategy, seed, scenarioId, index, fieldName);
   }
 
+  applyDependencies(record, contract, scenario);
   return record;
 }
 
@@ -281,6 +306,10 @@ function runStrategy(
       return validDatetime(field, seed, scope, index);
     case "valid_boolean":
       return randomInt(field, seed, scope, index, 0, 1) === 1;
+    case "boolean_false":
+      return false;
+    case "boolean_true":
+      return true;
     case "valid_currency":
       return choice(field, seed, scope, index, currencies);
     case "valid_url":
@@ -309,6 +338,22 @@ function runStrategy(
       return randomInt(field, seed, scope, index, 0, 999999).toString().padStart(6, "0");
     case "valid_free_text":
       return `Generated test note ${index + 1}`;
+    case "xss_payload":
+      return "<script>alert('tdf')</script>";
+    case "sql_injection_payload":
+      return "admin' OR '1'='1";
+    case "null_value":
+      return null;
+    case "empty_string":
+      return "";
+    case "whitespace_only":
+      return "   ";
+    case "over_max_length":
+      return overMaxLength(field);
+    case "below_min_length":
+      return belowMinLength(field);
+    case "duplicate_value":
+      return duplicateValue(field);
     default:
       throw new Error(`Unknown strategy: ${strategy}`);
   }
@@ -409,6 +454,260 @@ function validExpiryDate(field: ContractField, seed: string, scope: string, inde
   return `${month}/${year}`;
 }
 
+function overMaxLength(field: ContractField): string {
+  const maximum = integerConstraint(field, "maxLength");
+  const length = maximum !== undefined && maximum >= 0 ? maximum + 1 : 256;
+  return "X".repeat(length);
+}
+
+function belowMinLength(field: ContractField): string {
+  const minimum = integerConstraint(field, "minLength");
+  const length = minimum !== undefined && minimum > 0 ? minimum - 1 : 0;
+  return "A".repeat(length);
+}
+
+function duplicateValue(field: ContractField): unknown {
+  switch (field.businessType) {
+    case "email":
+      return boundedEmail(field, "duplicate@example.test");
+    case "username":
+      return boundedText(field, "duplicate_user");
+    case "uuid":
+      return "00000000-0000-4000-8000-000000000000";
+    case "integer":
+    case "quantity":
+      return integerMinimum(field);
+    case "decimal":
+    case "amount":
+    case "percentage":
+      return numericMinimum(field);
+    case "date":
+    case "date_of_birth":
+      return "2026-01-01";
+    default:
+      return boundedText(field, "duplicate");
+  }
+}
+
+function applyDependencies(
+  record: GeneratedRecord,
+  contract: ContractJson,
+  scenario: ScenarioDefinition,
+): void {
+  for (const [fieldName, field] of Object.entries(contract.fields)) {
+    if (!Object.hasOwn(record, fieldName)) {
+      continue;
+    }
+
+    const override = scenario.fields[fieldName] ?? {};
+    if (Object.hasOwn(override, "value")) {
+      continue;
+    }
+
+    const dependencies = field.dependencies;
+    if (!isRecord(dependencies)) {
+      continue;
+    }
+
+    const strategy = typeof override.strategy === "string" ? override.strategy : "";
+    if (independentValueStrategies.has(strategy)) {
+      continue;
+    }
+
+    const matchesField = dependencies.matchesField;
+    if (typeof matchesField === "string" && Object.hasOwn(record, matchesField)) {
+      record[fieldName] =
+        strategy === "mismatch_field" ? differentValue(record[matchesField], field) : record[matchesField];
+      continue;
+    }
+
+    const rangeStart = dependencies.rangeEndFor;
+    if (typeof rangeStart === "string" && Object.hasOwn(record, rangeStart)) {
+      record[fieldName] = relativeTemporalValue(
+        record[rangeStart],
+        field,
+        strategy === "date_before_related_field" ? -1 : 7,
+      );
+      continue;
+    }
+
+    const numericMinimum = dependencies.maxFor;
+    if (typeof numericMinimum === "string" && Object.hasOwn(record, numericMinimum)) {
+      record[fieldName] =
+        strategy === "numeric_max_below_min"
+          ? relativeNumericValue(record[numericMinimum], field, -1)
+          : validNumericMaxValue(record[numericMinimum], field);
+    }
+  }
+}
+
+function differentValue(value: unknown, field: ContractField): unknown {
+  if (value === null || value === undefined) {
+    return boundedText(field, "mismatch");
+  }
+  if (typeof value === "boolean") {
+    return !value;
+  }
+  if (typeof value === "number") {
+    return Number.isInteger(value) ? value + 1 : Math.round((value + 1) * 100) / 100;
+  }
+
+  const original = String(value);
+  const candidate = boundedText(field, `${original}_mismatch`, "X");
+  if (candidate !== original) {
+    return candidate;
+  }
+  if (!original) {
+    return boundedText(field, "mismatch");
+  }
+  const replacement = original.endsWith("X") ? "Y" : "X";
+  return `${original.slice(0, -1)}${replacement}`;
+}
+
+function relativeTemporalValue(value: unknown, field: ContractField, days: number): string {
+  const parsed = parseTemporalValue(value) ?? new Date(Date.UTC(2026, 0, 1, 9, 0, 0));
+  const shifted = new Date(parsed.getTime());
+  shifted.setUTCDate(shifted.getUTCDate() + days);
+  return field.dataType === "datetime" ? formatDateTimeZ(shifted) : shifted.toISOString().slice(0, 10);
+}
+
+function parseTemporalValue(value: unknown): Date | undefined {
+  if (typeof value !== "string" || !value) {
+    return undefined;
+  }
+
+  const normalized = value.endsWith("Z") ? value.slice(0, -1) : value;
+  if (normalized.includes("T")) {
+    const match =
+      /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?$/.exec(normalized);
+    if (!match) {
+      return undefined;
+    }
+    return validUtcDate(
+      Number(match[1]),
+      Number(match[2]),
+      Number(match[3]),
+      Number(match[4]),
+      Number(match[5]),
+      Number(match[6] ?? 0),
+    );
+  }
+
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(normalized);
+  if (!match) {
+    return undefined;
+  }
+  return validUtcDate(Number(match[1]), Number(match[2]), Number(match[3]), 9, 0, 0);
+}
+
+function validUtcDate(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  second: number,
+): Date | undefined {
+  const value = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  if (
+    value.getUTCFullYear() !== year ||
+    value.getUTCMonth() !== month - 1 ||
+    value.getUTCDate() !== day ||
+    value.getUTCHours() !== hour ||
+    value.getUTCMinutes() !== minute ||
+    value.getUTCSeconds() !== second
+  ) {
+    return undefined;
+  }
+  return value;
+}
+
+function formatDateTimeZ(value: Date): string {
+  return `${value.getUTCFullYear().toString().padStart(4, "0")}-${(value.getUTCMonth() + 1)
+    .toString()
+    .padStart(2, "0")}-${value.getUTCDate().toString().padStart(2, "0")}T${value
+    .getUTCHours()
+    .toString()
+    .padStart(2, "0")}:${value.getUTCMinutes().toString().padStart(2, "0")}:${value
+    .getUTCSeconds()
+    .toString()
+    .padStart(2, "0")}Z`;
+}
+
+function validNumericMaxValue(value: unknown, field: ContractField): number {
+  const base = numberValue(value) ?? numericMinimum(field);
+  const step = numericStep(field);
+  let candidate = base + step;
+  const maximum = numberConstraintValue(field, "maximum");
+  if (maximum !== undefined && candidate > maximum && maximum >= base) {
+    candidate = maximum;
+  } else if (maximum !== undefined && maximum < base) {
+    candidate = base;
+  }
+
+  const minimum = numberConstraintValue(field, "minimum");
+  if (minimum !== undefined && candidate < minimum) {
+    candidate = minimum;
+  }
+
+  return coerceNumberForField(candidate, field);
+}
+
+function relativeNumericValue(value: unknown, field: ContractField, offset: number): number {
+  const base = numberValue(value) ?? numericMinimum(field);
+  return coerceNumberForField(base + offset * numericStep(field), field);
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" ? value : undefined;
+}
+
+function numericStep(field: ContractField): number {
+  const step = field.constraints?.step || field.constraints?.multipleOf;
+  return typeof step === "number" && step > 0 ? step : 1;
+}
+
+function integerMinimum(field: ContractField): number {
+  return Math.trunc(numericMinimum(field));
+}
+
+function numericMinimum(field: ContractField): number {
+  return numberConstraintValue(field, "minimum") ?? 1;
+}
+
+function coerceNumberForField(value: number, field: ContractField): number {
+  if (field.dataType === "integer") {
+    return Math.trunc(value);
+  }
+  return Math.round(value * 100) / 100;
+}
+
+function boundedText(field: ContractField, value: string, filler = "x"): string {
+  const maximum = integerConstraint(field, "maxLength");
+  if (maximum !== undefined && maximum >= 0 && value.length > maximum) {
+    value = value.slice(0, maximum);
+  }
+
+  const minimum = integerConstraint(field, "minLength");
+  if (minimum !== undefined && value.length < minimum) {
+    value += filler.repeat(minimum - value.length);
+  }
+  return value;
+}
+
+function boundedEmail(field: ContractField, value: string): string {
+  const maximum = integerConstraint(field, "maxLength");
+  if (maximum !== undefined && maximum >= 5 && maximum < value.length) {
+    value = maximum < "a@example.test".length ? "a@b.c" : "a@example.test";
+  }
+
+  const minimum = integerConstraint(field, "minLength");
+  if (minimum !== undefined && value.length < minimum) {
+    value = `${"a".repeat(Math.max(0, minimum - "@example.test".length))}@example.test`;
+  }
+  return value;
+}
+
 function randomInt(
   field: ContractField,
   seed: string,
@@ -429,13 +728,26 @@ function rng(field: ContractField, seed: string, scope: string, index: number): 
 }
 
 function numberConstraint(field: ContractField, name: string, fallback: number): number {
-  const value = field.constraints?.[name];
-  return typeof value === "number" ? value : fallback;
+  return numberConstraintValue(field, name) ?? fallback;
 }
 
 function stringConstraint(field: ContractField, name: string, fallback: string): string {
   const value = field.constraints?.[name];
   return typeof value === "string" ? value : fallback;
+}
+
+function numberConstraintValue(field: ContractField, name: string): number | undefined {
+  const value = field.constraints?.[name];
+  return typeof value === "number" ? value : undefined;
+}
+
+function integerConstraint(field: ContractField, name: string): number | undefined {
+  const value = numberConstraintValue(field, name);
+  return value !== undefined && Number.isInteger(value) ? value : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function ibanCheckDigits(countryCode: string, bban: string): string {

@@ -104,6 +104,7 @@ def validate_contract_data(data: dict[str, Any], schema: dict[str, Any] | None =
     findings.extend(_scenario_field_reference_findings(data))
     if not has_schema_findings:
         findings.extend(_scenario_coverage_findings(data))
+    findings.extend(_field_dependency_reference_findings(data))
     return _result_from_findings(findings)
 
 
@@ -265,6 +266,47 @@ def _scenario_field_reference_findings(data: dict[str, Any]) -> list[ValidationF
                         field=f"scenarios[{scenario_index}].fields.{field_name}",
                         message=f"Scenario '{scenario_name}' references unknown field '{field_name}'.",
                         recommendation="Use a field defined in contract.fields or add a matching field definition.",
+                    )
+                )
+    return findings
+
+
+def _field_dependency_reference_findings(data: dict[str, Any]) -> list[ValidationFinding]:
+    fields = data.get("fields", {})
+    if not isinstance(fields, dict):
+        return []
+
+    known_fields = set(fields)
+    dependency_keys = ("matchesField", "rangeStartFor", "rangeEndFor", "minFor", "maxFor")
+    findings: list[ValidationFinding] = []
+    for field_name, field in fields.items():
+        if not isinstance(field, dict):
+            continue
+        dependencies = field.get("dependencies", {})
+        if not isinstance(dependencies, dict):
+            continue
+
+        for dependency_key in dependency_keys:
+            referenced_field = dependencies.get(dependency_key)
+            if not isinstance(referenced_field, str):
+                continue
+            finding_field = f"fields.{field_name}.dependencies.{dependency_key}"
+            if referenced_field == field_name:
+                findings.append(
+                    ValidationFinding(
+                        severity="error",
+                        field=finding_field,
+                        message=f"Field '{field_name}' cannot depend on itself.",
+                        recommendation="Reference a different field or remove the dependency.",
+                    )
+                )
+            elif referenced_field not in known_fields:
+                findings.append(
+                    ValidationFinding(
+                        severity="error",
+                        field=finding_field,
+                        message=f"Field '{field_name}' references unknown dependency field '{referenced_field}'.",
+                        recommendation="Use a field defined in contract.fields or remove the dependency.",
                     )
                 )
     return findings
